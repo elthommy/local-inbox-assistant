@@ -1,0 +1,897 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, streamChat } from './api.js'
+
+const MONO = "'IBM Plex Mono', monospace"
+const SANS = "'IBM Plex Sans', system-ui, sans-serif"
+const TRACK_ON = '#1f6feb'
+const TRACK_OFF = '#2a2f38'
+
+const AVATAR_COLORS = ['#F87171', '#FBBF24', '#38BDF8', '#4ADE80', '#A78BFA', '#F472B6', '#2DD4BF']
+
+function avatarColor(name) {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function priorityColor(p) {
+  return p === 'high' ? '#F87171' : p === 'medium' ? '#FBBF24' : p === 'low' ? '#4ADE80' : '#3a4048'
+}
+
+function formatEmailTime(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const sameDay = (a, b) => a.toDateString() === b.toDateString()
+  if (sameDay(d, now)) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (sameDay(d, yesterday)) return 'Yesterday'
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function relativeTime(iso) {
+  if (!iso) return 'never'
+  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 60) return 'just now'
+  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)} h ago`
+  return `${Math.floor(secs / 86400)} d ago`
+}
+
+function eventDateShort(raw) {
+  if (!raw) return '—'
+  // dd/mm/yyyy (French) — JS Date would read it as mm/dd
+  const fr = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  const d = fr ? new Date(`${fr[3]}-${fr[2].padStart(2, '0')}-${fr[1].padStart(2, '0')}`) : new Date(raw)
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('en', { month: 'short', day: 'numeric' }).toUpperCase()
+  }
+  return raw.slice(0, 8).toUpperCase()
+}
+
+function nowTime() {
+  return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+function Switch({ on, onClick, width = 32, height = 18, knob = 14 }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        cursor: 'pointer',
+        width,
+        height,
+        borderRadius: height / 2,
+        background: on ? TRACK_ON : TRACK_OFF,
+        position: 'relative',
+        flex: 'none',
+        transition: 'background .15s',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: on ? width - knob - 2 : 2,
+          width: knob,
+          height: knob,
+          borderRadius: '50%',
+          background: '#fff',
+          transition: 'left .15s',
+        }}
+      />
+    </div>
+  )
+}
+
+function StatusDot({ color, label, glow = true }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: MONO, fontSize: 12, color: '#9aa1ac' }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: glow ? `0 0 6px ${color}` : 'none' }} />
+      {label}
+    </div>
+  )
+}
+
+function Header({ ollamaUp, onOpenSettings }) {
+  return (
+    <div
+      style={{
+        height: 56,
+        flex: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 20px',
+        background: '#12151a',
+        borderBottom: '1px solid #232830',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+        <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 15, color: '#e8eaed' }}>▍local-inbox-assistant</span>
+        <span style={{ fontSize: 12, color: '#6b7280', fontFamily: MONO }}>AI-assisted inbox</span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+        <StatusDot color={ollamaUp ? '#4ADE80' : '#F87171'} label={ollamaUp ? 'ollama · local' : 'ollama · offline'} />
+        <StatusDot color="#3a4048" glow={false} label="claude · soon" />
+        <button
+          className="settings-btn"
+          onClick={onOpenSettings}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: '#1a1f27',
+            border: '1px solid #262b33',
+            color: '#c4c9d1',
+            fontFamily: MONO,
+            fontSize: 12,
+            padding: '7px 12px',
+            borderRadius: 6,
+            cursor: 'pointer',
+          }}
+        >
+          ⚙ MCP / RAG
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend }) {
+  const scrollRef = useRef(null)
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, isTyping])
+
+  return (
+    <div style={{ flex: '0 0 45%', display: 'flex', flexDirection: 'column', borderRight: '1px solid #232830', minWidth: 0 }}>
+      <div
+        style={{
+          flex: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid #1c2027',
+          background: '#0e1116',
+          gap: 12,
+        }}
+      >
+        <select
+          value={model}
+          onChange={onModelChange}
+          style={{
+            background: '#161a20',
+            border: '1px solid #262b33',
+            color: '#e8eaed',
+            fontFamily: MONO,
+            fontSize: 12,
+            padding: '7px 10px',
+            borderRadius: 6,
+            cursor: 'pointer',
+            flex: 'none',
+            maxWidth: '55%',
+          }}
+        >
+          <option value="ollama">{chatModel} · Ollama (local)</option>
+          <option value="claude" disabled>
+            Claude (cloud) — coming soon
+          </option>
+        </select>
+        <div
+          onClick={toggleContext}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: 'pointer',
+            padding: '6px 10px',
+            borderRadius: 6,
+            background: useContext ? '#12241c' : '#161a20',
+            border: `1px solid ${useContext ? '#1f4a34' : '#232830'}`,
+            minWidth: 0,
+          }}
+        >
+          <Switch on={useContext} width={28} height={16} knob={12} />
+          <span
+            style={{
+              fontFamily: MONO,
+              fontSize: 11,
+              color: useContext ? '#4ADE80' : '#6b7280',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            inbox context · {indexedCount.toLocaleString()}
+          </span>
+        </div>
+      </div>
+
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 16, minHeight: 0 }}>
+        {messages.length === 0 && (
+          <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', margin: 'auto', textAlign: 'center', lineHeight: 2 }}>
+            ▍no messages yet
+            <br />
+            ask anything about your inbox
+          </div>
+        )}
+        {messages.map((m) => {
+          const isUser = m.role === 'user'
+          return (
+            <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', gap: 4 }}>
+              <span
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 10.5,
+                  color: isUser ? '#6b7280' : m.error ? '#F87171' : '#4ADE80',
+                  padding: '0 2px',
+                }}
+              >
+                {isUser ? 'you' : m.model} · {m.time}
+              </span>
+              <div
+                style={{
+                  maxWidth: '88%',
+                  background: isUser ? '#16324a' : '#161a20',
+                  border: `1px solid ${isUser ? '#1f4a68' : m.error ? '#4a1f1f' : '#232830'}`,
+                  color: '#e2e5ea',
+                  padding: '11px 14px',
+                  borderRadius: 10,
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {m.text}
+              </div>
+            </div>
+          )
+        })}
+        {isTyping && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', padding: '0 2px' }}>{chatModel}</span>
+            <div
+              style={{
+                background: '#161a20',
+                border: '1px solid #232830',
+                padding: '11px 14px',
+                borderRadius: 10,
+                fontFamily: MONO,
+                fontSize: 13,
+                color: '#6b7280',
+              }}
+            >
+              ···
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ flex: 'none', display: 'flex', gap: 8, padding: '14px 16px', borderTop: '1px solid #1c2027', background: '#0e1116' }}>
+        <input
+          type="text"
+          value={input}
+          onChange={onInputChange}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSend()
+          }}
+          placeholder="Ask about your inbox…"
+          style={{
+            flex: 1,
+            background: '#161a20',
+            border: '1px solid #262b33',
+            color: '#e8eaed',
+            fontFamily: SANS,
+            fontSize: 13.5,
+            padding: '11px 14px',
+            borderRadius: 8,
+            outline: 'none',
+          }}
+        />
+        <button
+          className="send-btn"
+          onClick={onSend}
+          style={{
+            background: '#1f6feb',
+            border: '1px solid #1f6feb',
+            color: '#fff',
+            fontFamily: MONO,
+            fontSize: 12,
+            fontWeight: 600,
+            padding: '0 18px',
+            borderRadius: 8,
+            cursor: 'pointer',
+          }}
+        >
+          send
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function EmailRow({ email, expanded, onToggle }) {
+  const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
+  const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
+  return (
+    <div onClick={onToggle} style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: priorityColor(email.priority), flex: 'none' }} />
+        <span
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: avatarColor(email.sender || '?'),
+            color: '#0b0d10',
+            fontFamily: MONO,
+            fontSize: 11,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flex: 'none',
+          }}
+        >
+          {initial}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <span
+              style={{
+                fontSize: 13,
+                fontWeight: email.unread ? 600 : 400,
+                color: '#e2e5ea',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {email.sender}
+            </span>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', flex: 'none' }}>{formatEmailTime(email.date_utc)}</span>
+          </div>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: email.unread ? '#e2e5ea' : '#8a909a',
+              fontWeight: email.unread ? 600 : 400,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              marginTop: 1,
+            }}
+          >
+            {email.subject}
+          </div>
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1c2027' }}>
+          <div style={{ fontSize: 12.5, color: '#9aa1ac', lineHeight: 1.6 }}>{email.snippet}</div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
+            {domain && (
+              <span style={{ fontFamily: MONO, fontSize: 10, background: '#1a1f27', color: '#9aa1ac', padding: '3px 8px', borderRadius: 4 }}>
+                {domain}
+              </span>
+            )}
+            {(email.tasks || []).map((t) => (
+              <span key={`t${t.id}`} style={{ fontFamily: MONO, fontSize: 10, background: '#2a2013', color: '#FBBF24', padding: '3px 8px', borderRadius: 4 }}>
+                {t.done ? '☑' : '☐'} {t.text}
+                {t.due ? ` · ${t.due}` : ''}
+              </span>
+            ))}
+            {(email.events || []).map((ev) => (
+              <span key={`e${ev.id}`} style={{ fontFamily: MONO, fontSize: 10, background: '#132a24', color: '#4ADE80', padding: '3px 8px', borderRadius: 4 }}>
+                ◷ {ev.title}
+                {ev.date ? ` · ${ev.date}` : ''}
+                {ev.time ? ` ${ev.time}` : ''}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TaskRow({ task, onToggle }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
+      <div
+        onClick={onToggle}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 4,
+          border: `1.5px solid ${task.done ? '#4ADE80' : '#3a4048'}`,
+          background: task.done ? '#4ADE80' : 'transparent',
+          flex: 'none',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#0b0d10',
+          fontSize: 12,
+        }}
+      >
+        {task.done ? '✓' : ''}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: task.done ? '#5b6270' : '#e2e5ea', textDecoration: task.done ? 'line-through' : 'none' }}>{task.text}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
+          from {task.source}
+          {task.due ? ` · due ${task.due}` : ''}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function EventRow({ event }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
+      <div
+        style={{
+          fontFamily: MONO,
+          fontSize: 11,
+          color: '#4ADE80',
+          background: '#132a24',
+          borderRadius: 6,
+          padding: '8px 10px',
+          textAlign: 'center',
+          flex: 'none',
+          minWidth: 54,
+        }}
+      >
+        {eventDateShort(event.date)}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: '#e2e5ea' }}>{event.title}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
+          {event.time ? `${event.time} · ` : ''}from {event.source}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IndexProgress({ progress }) {
+  if (!progress || progress.phase === 'idle') return null
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+  return (
+    <div style={{ fontFamily: MONO, fontSize: 11, color: progress.phase === 'error' ? '#F87171' : '#FBBF24' }}>
+      {progress.phase === 'error' ? `indexing error: ${progress.error}` : `${progress.phase}… ${progress.done}/${progress.total} (${pct}%)`}
+    </div>
+  )
+}
+
+function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex }) {
+  const [showMcp, setShowMcp] = useState(true)
+  const sectionTitle = {
+    fontFamily: MONO,
+    fontSize: 11,
+    color: '#6b7280',
+    textTransform: 'uppercase',
+    letterSpacing: '.05em',
+    marginBottom: 10,
+  }
+  const card = { background: '#161a20', border: '1px solid #232830', borderRadius: 8, padding: 12 }
+  const ollama = status?.ollama
+  const index = status?.index
+  const mcpCmd = index ? `claude mcp add localmail -- uv --directory ${index.backend_dir} run python mcp_server.py` : ''
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.45)',
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? 'auto' : 'none',
+          transition: 'opacity .18s',
+          zIndex: 20,
+        }}
+      />
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          height: '100%',
+          width: 400,
+          maxWidth: '92vw',
+          background: '#12151a',
+          borderLeft: '1px solid #232830',
+          zIndex: 21,
+          display: 'flex',
+          flexDirection: 'column',
+          transform: open ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform .2s ease',
+          fontFamily: SANS,
+          color: '#e8eaed',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid #232830' }}>
+          <span style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13.5 }}>MCP / RAG settings</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: 16, cursor: 'pointer', padding: 4 }}>
+            ✕
+          </button>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 22, overflowY: 'auto' }}>
+          <div>
+            <div style={sectionTitle}>Model connections</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px' }}>
+                <div>
+                  <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Ollama · {ollama ? ollama.url.replace(/^https?:\/\//, '') : '…'}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
+                    {ollama ? `${ollama.chat_model} + ${ollama.embed_model}` : ''}
+                  </div>
+                </div>
+                {ollama?.up ? (
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#4ADE80', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80' }} />
+                    online
+                  </span>
+                ) : (
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#F87171', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F87171' }} />
+                    offline
+                  </span>
+                )}
+              </div>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', opacity: 0.6 }}>
+                <div>
+                  <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Claude · api.anthropic.com</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>cloud support — planned (step 2)</div>
+                </div>
+                <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3a4048' }} />
+                  soon
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>Data sources</div>
+            <div style={card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Thunderbird Gmail inbox (.eml)</div>
+                  <div
+                    style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={index?.maildir}
+                  >
+                    {index ? `${index.emails.toLocaleString()} messages · last ${index.window_days} days` : '…'}
+                  </div>
+                </div>
+                <Switch on={useContext} onClick={toggleContext} />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>RAG index</div>
+            <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12.5, color: '#e2e5ea' }}>Enable retrieval (inbox context)</span>
+                <Switch on={useContext} onClick={toggleContext} />
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 11, color: '#6b7280' }}>
+                {index ? `${index.chunks.toLocaleString()} chunks · last indexed ${relativeTime(index.last_indexed)}` : '…'}
+              </div>
+              <IndexProgress progress={index?.progress} />
+              <button
+                onClick={onReindex}
+                disabled={index?.progress?.phase && !['idle', 'error'].includes(index.progress.phase)}
+                style={{
+                  alignSelf: 'flex-start',
+                  background: '#1a1f27',
+                  border: '1px solid #262b33',
+                  color: '#c4c9d1',
+                  fontFamily: MONO,
+                  fontSize: 11,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                }}
+              >
+                ↻ re-index now
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>MCP server</div>
+            <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12.5, color: '#e2e5ea' }}>Mail tools via MCP (stdio)</span>
+                <Switch on={showMcp} onClick={() => setShowMcp((v) => !v)} />
+              </div>
+              {showMcp ? (
+                <>
+                  <div style={{ fontFamily: MONO, fontSize: 11, color: '#4ADE80' }}>
+                    tools: search_mail, get_thread, list_tasks, list_events
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 10.5,
+                      color: '#9aa1ac',
+                      background: '#0e1116',
+                      border: '1px solid #1c2027',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      wordBreak: 'break-all',
+                      cursor: 'copy',
+                    }}
+                    title="Click to copy"
+                    onClick={() => navigator.clipboard?.writeText(mcpCmd)}
+                  >
+                    {mcpCmd}
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontFamily: MONO, fontSize: 11, color: '#6b7280' }}>register command hidden</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+export default function App() {
+  const [status, setStatus] = useState(null)
+  const [stats, setStats] = useState(null)
+  const [emails, setEmails] = useState([])
+  const [tasks, setTasks] = useState([])
+  const [events, setEvents] = useState([])
+  const [model, setModel] = useState('ollama')
+  const [useContext, setUseContext] = useState(true)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [filter, setFilter] = useState('priority')
+  const [expandedId, setExpandedId] = useState(null)
+  const [input, setInput] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const [messages, setMessages] = useState([])
+  const [loadError, setLoadError] = useState(null)
+  const indexingRef = useRef(false)
+
+  const refreshData = useCallback(async () => {
+    try {
+      const [st, em, tk, ev] = await Promise.all([api.stats(), api.emails(filter), api.tasks(), api.events()])
+      setStats(st)
+      setEmails(em)
+      setTasks(tk)
+      setEvents(ev)
+      setLoadError(null)
+    } catch (e) {
+      setLoadError(String(e.message || e))
+    }
+  }, [filter])
+
+  // status polling: fast while indexing, slow otherwise; refresh data when
+  // an indexing run finishes
+  useEffect(() => {
+    let stop = false
+    let timer
+    const poll = async () => {
+      try {
+        const s = await api.status()
+        if (stop) return
+        setStatus(s)
+        const indexing = !['idle', 'error'].includes(s.index.progress.phase)
+        if (indexingRef.current && !indexing) refreshData()
+        indexingRef.current = indexing
+        timer = setTimeout(poll, indexing ? 2000 : 15000)
+      } catch {
+        if (!stop) timer = setTimeout(poll, 5000)
+      }
+    }
+    poll()
+    return () => {
+      stop = true
+      clearTimeout(timer)
+    }
+  }, [refreshData])
+
+  useEffect(() => {
+    refreshData()
+  }, [refreshData])
+
+  const chatModel = status?.ollama?.chat_model || 'ollama'
+  const indexedCount = status?.index?.emails ?? 0
+
+  const sendMessage = async () => {
+    const text = input.trim()
+    if (!text || isTyping) return
+    const userMsg = { id: Date.now(), role: 'user', text, time: nowTime() }
+    const history = [...messages, userMsg]
+    setMessages(history)
+    setInput('')
+    setIsTyping(true)
+
+    const assistantId = Date.now() + 1
+    let started = false
+    try {
+      await streamChat(
+        {
+          messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text })),
+          model,
+          useContext,
+        },
+        (token) => {
+          if (!started) {
+            started = true
+            setIsTyping(false)
+            setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', model: chatModel, text: token, time: nowTime() }])
+          } else {
+            setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + token } : m)))
+          }
+        },
+      )
+    } catch (e) {
+      const errText = String(e.message || e)
+      if (started) {
+        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + `\n\n[error: ${errText}]`, error: true } : m)))
+      } else {
+        setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', model: 'error', text: errText, time: nowTime(), error: true }])
+      }
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
+  const toggleTask = async (id) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
+    try {
+      const res = await api.toggleTask(id)
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: res.done } : t)))
+    } catch {
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
+    }
+  }
+
+  const reindex = async () => {
+    try {
+      await api.reindex()
+      const s = await api.status()
+      setStatus(s)
+      indexingRef.current = true
+    } catch {
+      /* status poll will surface it */
+    }
+  }
+
+  const openTasks = tasks.filter((t) => !t.done)
+  const statTiles = [
+    { label: 'unread', value: stats?.unread ?? '–', color: '#e8eaed' },
+    { label: 'open tasks', value: stats?.open_tasks ?? '–', color: '#FBBF24' },
+    { label: 'upcoming events', value: stats?.events ?? '–', color: '#4ADE80' },
+    { label: 'high priority', value: stats?.high_priority ?? '–', color: '#F87171' },
+  ]
+
+  const filterDefs = [
+    { id: 'priority', label: `priority (${stats?.high_priority ?? 0})` },
+    { id: 'all', label: `all mail (${indexedCount})` },
+    { id: 'tasks', label: `tasks (${openTasks.length})` },
+    { id: 'events', label: `events (${events.length})` },
+  ]
+
+  return (
+    <div
+      style={{
+        height: '100vh',
+        width: '100vw',
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#0b0d10',
+        color: '#e8eaed',
+        fontFamily: SANS,
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      <Header ollamaUp={status?.ollama?.up ?? false} onOpenSettings={() => setSettingsOpen(true)} />
+
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+        <ChatPane
+          chatModel={chatModel}
+          model={model}
+          onModelChange={(e) => setModel(e.target.value)}
+          useContext={useContext}
+          toggleContext={() => setUseContext((v) => !v)}
+          indexedCount={indexedCount}
+          messages={messages}
+          isTyping={isTyping}
+          input={input}
+          onInputChange={(e) => setInput(e.target.value)}
+          onSend={sendMessage}
+        />
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <div style={{ flex: 'none', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 10, padding: '18px 20px 14px' }}>
+            {statTiles.map((s) => (
+              <div key={s.label} style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
+                <div style={{ fontFamily: MONO, fontSize: 22, fontWeight: 700, color: s.color }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.04em' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ flex: 'none', display: 'flex', gap: 8, padding: '0 20px 14px', alignItems: 'center' }}>
+            {filterDefs.map((f) => {
+              const active = filter === f.id
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  style={{
+                    background: active ? '#1a2b3d' : '#12151a',
+                    border: `1px solid ${active ? '#2a5a8c' : '#232830'}`,
+                    color: active ? '#7dd3fc' : '#9aa1ac',
+                    fontFamily: MONO,
+                    fontSize: 11.5,
+                    padding: '6px 12px',
+                    borderRadius: 16,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+            <div style={{ marginLeft: 'auto' }}>
+              <IndexProgress progress={status?.index?.progress} />
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: 9, minHeight: 0 }}>
+            {loadError && (
+              <div style={{ fontFamily: MONO, fontSize: 12, color: '#F87171', padding: 12, background: '#1a1214', border: '1px solid #4a1f1f', borderRadius: 8 }}>
+                backend unreachable: {loadError}
+              </div>
+            )}
+            {(filter === 'priority' || filter === 'all') &&
+              emails.map((e) => (
+                <EmailRow key={e.id} email={e} expanded={expandedId === e.id} onToggle={() => setExpandedId((cur) => (cur === e.id ? null : e.id))} />
+              ))}
+            {(filter === 'priority' || filter === 'all') && emails.length === 0 && !loadError && (
+              <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
+                {filter === 'priority' ? 'no high-priority mail (yet — extraction may still be running)' : 'no mail indexed yet'}
+              </div>
+            )}
+            {filter === 'tasks' && tasks.map((t) => <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} />)}
+            {filter === 'tasks' && tasks.length === 0 && (
+              <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no tasks extracted yet</div>
+            )}
+            {filter === 'events' && events.map((ev) => <EventRow key={ev.id} event={ev} />)}
+            {filter === 'events' && events.length === 0 && (
+              <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no events extracted yet</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        status={status}
+        useContext={useContext}
+        toggleContext={() => setUseContext((v) => !v)}
+        onReindex={reindex}
+      />
+    </div>
+  )
+}

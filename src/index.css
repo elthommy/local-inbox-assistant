@@ -1,0 +1,36 @@
+body {
+  margin: 0;
+  background: #0b0d10;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2f38;
+  border-radius: 4px;
+}
+
+a {
+  color: #38bdf8;
+}
+a:hover {
+  color: #7dd3fc;
+}
+
+.settings-btn:hover {
+  background: #20262f !important;
+  border-color: #323945 !important;
+}
+
+.send-btn:hover {
+  background: #3b82f6 !important;
+}

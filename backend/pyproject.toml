@@ -1,0 +1,17 @@
+[project]
+name = "local-inbox-assistant"
+version = "0.1.0"
+description = "Local AI-assisted inbox: Thunderbird maildir + Ollama RAG + MCP"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "chromadb>=1.0",
+    "httpx>=0.28",
+    "pydantic-settings>=2.8",
+    "mcp>=1.9",
+    "beautifulsoup4>=4.13",
+]
+
+[tool.uv]
+package = false
