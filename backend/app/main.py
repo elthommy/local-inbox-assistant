@@ -24,7 +24,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="local-inbox-assistant", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # the vite dev proxy makes /api same-origin; this only matters when the
+    # frontend talks to the backend directly, so allow any localhost port
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )

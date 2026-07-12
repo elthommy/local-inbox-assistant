@@ -32,6 +32,20 @@ the UI shows it as "coming soon".
 ## Run
 
 ```bash
+./start.sh             # installs deps on first run, starts everything; Ctrl-C stops it
+```
+
+By default the frontend is at http://localhost:5173 and the backend at :8000.
+Ports are configurable via env vars or a `.env` file at the repo root (see
+`.env.example`; env vars take precedence):
+
+```bash
+BACKEND_PORT=8080 FRONTEND_PORT=3000 ./start.sh
+```
+
+Or start the pieces manually:
+
+```bash
 # 1. backend (first start indexes the last 90 days of mail; watch progress in the UI)
 cd backend
 uv sync
@@ -42,8 +56,8 @@ npm install
 npm run dev            # http://localhost:5173 (proxies /api to :8000)
 ```
 
-Configuration lives in `backend/.env` (see `backend/.env.example`): maildir
-path, indexing window, model names, Ollama URL.
+Backend configuration lives in `backend/.env` (see `backend/.env.example`):
+maildir path, indexing window, model names, Ollama URL.
 
 ## MCP server
 
