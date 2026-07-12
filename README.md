@@ -72,6 +72,47 @@ Tools: `search_mail(query, top_k)`, `get_thread(message_id)`,
 (with the right absolute path) is shown in the app under **⚙ MCP / RAG →
 MCP server**.
 
+## Testing
+
+Backend — **pytest** (99 tests, ~1 s). Everything runs against temporary
+maildirs/DBs with all Ollama traffic faked (`respx` / monkeypatching) — the
+real mailbox, index, and network are never touched:
+
+```bash
+cd backend
+uv run pytest            # uv sync installs the dev group on first run
+uv run pytest -v tests/test_parser.py   # a single file, verbose
+```
+
+| File | Covers |
+|------|--------|
+| `tests/test_parser.py` | `.eml` parsing: plain/HTML/multipart bodies, UTF-8 / quoted-printable / ISO-8859-1 (French), missing date/subject/sender, snippet+body truncation, unread detection (X-Mozilla-Status, maildir flags), thread headers, cheap date-only probe |
+| `tests/test_maildir.py` | 90-day window scan: date filtering, mtime pre-filter vs old resynced mail, already-indexed skip, oldest-first sort, undated files, subdirectories |
+| `tests/test_chunking.py` | chunking: sizes, overlap, paragraph-boundary preference, full-text coverage, micro-chunk tail regression, per-email chunk docs (header prefix, ids, metadata) |
+| `tests/test_rag_store.py` | Chroma store: index/search roundtrip, idempotent upsert, deletes, empty index, and `search_emails` per-email dedup/caps |
+| `tests/test_db.py` | schema idempotence, meta upsert, maildir-file uniqueness, task/event cascade delete |
+| `tests/test_extract.py` | extraction window/limit selection, storing priority/tasks/events, invalid-priority coercion, blank-item skipping, 5-item caps + truncation, re-run replacement, failure marking |
+| `tests/test_chat.py` | RAG prompt building: context vs no-context system prompts, excerpt/task/event injection, done-task exclusion, 12-message history cap, stream orchestration |
+| `tests/test_ollama_client.py` | Ollama HTTP client (mocked with respx): availability, model list, token streaming, `think:false` only for thinking-capable models (cached probe), JSON mode with schema, embeddings, error surfacing |
+| `tests/test_claude_placeholder.py` | the step-2 Claude stub: unavailable, key detection, explicit NotImplementedError |
+| `tests/test_indexer.py` | full pipeline on synthetic maildirs: parse→embed→extract, incremental re-runs (one extraction per email ever), duplicate insert skip, per-email parse/extract failure tolerance, error phase reporting, `do_extract=False` |
+| `tests/test_api.py` | FastAPI routes via TestClient: `/status` (ollama up/down), `/stats`, email list/filter/detail/404, tasks with toggle roundtrip + 404, events, reindex start/refusal-while-running, chat validation (400), Claude SSE error event, SSE token stream + done, mid-stream failure error event |
+
+Frontend — **Vitest + React Testing Library** (35 tests, jsdom). Vitest is the
+Vite-native unit-test runner; Playwright would be the tool for full-browser
+end-to-end tests and could be added later on top of these:
+
+```bash
+npm test                 # single run
+npm run test:watch       # watch mode
+```
+
+| File | Covers |
+|------|--------|
+| `src/test/utils.test.js` | pure helpers: priority dot colors (incl. not-yet-extracted), deterministic avatar palette, today/yesterday/older email times, relative "last indexed" times, event date chips incl. the French `dd/mm/yyyy` regression and unparseable fallback |
+| `src/test/api.test.js` | API client: endpoint paths/methods, HTTP error propagation, SSE streaming (token order, frames split across network chunks, `done` termination, `error` events thrown, no tokens after error, exact request payload) |
+| `src/test/App.test.jsx` | dashboard behavior with a mocked API: live header status (ollama up/down, claude "soon"), stat tiles, filter switching + correct queries, email expansion with task/event chips, task toggle calling the API, event date chips, settings drawer (real index numbers, MCP register command, Claude placeholder), disabled Claude model option, chat send → streamed answer rendering, chat error bubbles, backend-unreachable banner, indexing progress display |
+
 ## Notes
 
 - **Indexing** is incremental: already-seen maildir files are skipped, and the

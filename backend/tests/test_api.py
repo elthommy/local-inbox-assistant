@@ -1,0 +1,200 @@
+import pytest
+from fastapi.testclient import TestClient
+
+import app.api as api_module
+import app.main as main_module
+from app.llm.ollama import OllamaClient
+
+
+@pytest.fixture
+def client(monkeypatch):
+    async def no_index(*a, **kw):
+        return None
+
+    # keep startup from indexing (and from touching Ollama) during API tests
+    monkeypatch.setattr(main_module, "run_index", no_index)
+    with TestClient(main_module.app) as c:
+        yield c
+
+
+def seed(client):
+    """Two emails, one high priority with a task and an event."""
+    from app.db import get_conn
+
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO emails(maildir_file, message_id, sender, sender_email, subject, "
+            "date_utc, unread, priority, snippet, body, extracted) VALUES "
+            "('a.eml', '<a@x>', 'Sarah', 'sarah@x.com', 'Q3 report', "
+            "'2026-07-10T00:00:00+00:00', 1, 'high', 'snip', 'full body', 1)"
+        )
+        high_id = cur.lastrowid
+        conn.execute(
+            "INSERT INTO emails(maildir_file, sender, subject, date_utc, priority, extracted) "
+            "VALUES('b.eml', 'News', 'digest', '2026-07-09T00:00:00+00:00', 'low', 1)"
+        )
+        conn.execute(
+            "INSERT INTO tasks(email_id, text, due, done) VALUES(?, 'review', 'Fri', 0)",
+            (high_id,),
+        )
+        conn.execute(
+            "INSERT INTO events(email_id, title, date, time) VALUES(?, 'review mtg', '2026-07-14', '10:00')",
+            (high_id,),
+        )
+    return high_id
+
+
+class TestStatus:
+    def test_status_shape(self, client, monkeypatch):
+        async def up(self):
+            return True
+
+        async def models(self):
+            return ["qwen3.6:latest", "nomic-embed-text:latest"]
+
+        monkeypatch.setattr(OllamaClient, "available", up)
+        monkeypatch.setattr(OllamaClient, "list_models", models)
+        data = client.get("/api/status").json()
+        assert data["ollama"]["up"] is True
+        assert data["ollama"]["chat_model_pulled"] is True
+        assert data["claude"] == {"configured": False, "implemented": False}
+        assert data["index"]["emails"] == 0
+        assert data["index"]["progress"]["phase"] in ("idle", "error")
+
+    def test_status_ollama_down(self, client, monkeypatch):
+        async def down(self):
+            return False
+
+        monkeypatch.setattr(OllamaClient, "available", down)
+        data = client.get("/api/status").json()
+        assert data["ollama"]["up"] is False
+        assert data["ollama"]["chat_model_pulled"] is False
+
+
+class TestStatsAndLists:
+    def test_stats(self, client):
+        seed(client)
+        assert client.get("/api/stats").json() == {
+            "unread": 1,
+            "open_tasks": 1,
+            "events": 1,
+            "high_priority": 1,
+        }
+
+    def test_emails_all_sorted_desc(self, client):
+        seed(client)
+        data = client.get("/api/emails?filter=all").json()
+        assert [e["subject"] for e in data] == ["Q3 report", "digest"]
+        assert data[0]["unread"] is True
+        assert "body" not in data[0]  # list view stays light
+
+    def test_emails_priority_filter(self, client):
+        seed(client)
+        data = client.get("/api/emails?filter=priority").json()
+        assert len(data) == 1
+        assert data[0]["priority"] == "high"
+        # chips embedded
+        assert data[0]["tasks"][0]["text"] == "review"
+        assert data[0]["events"][0]["title"] == "review mtg"
+
+    def test_email_detail_includes_body(self, client):
+        eid = seed(client)
+        data = client.get(f"/api/emails/{eid}").json()
+        assert data["body"] == "full body"
+
+    def test_email_detail_404(self, client):
+        assert client.get("/api/emails/999").status_code == 404
+
+    def test_tasks_include_source(self, client):
+        seed(client)
+        data = client.get("/api/tasks").json()
+        assert data[0]["source"] == "Sarah"
+        assert data[0]["done"] is False
+
+    def test_events_include_source(self, client):
+        seed(client)
+        data = client.get("/api/events").json()
+        assert data[0]["source"] == "Sarah"
+        assert data[0]["date"] == "2026-07-14"
+
+
+class TestTaskToggle:
+    def test_toggle_roundtrip(self, client):
+        seed(client)
+        task_id = client.get("/api/tasks").json()[0]["id"]
+        assert client.post(f"/api/tasks/{task_id}/toggle").json()["done"] is True
+        assert client.post(f"/api/tasks/{task_id}/toggle").json()["done"] is False
+
+    def test_toggle_404(self, client):
+        assert client.post("/api/tasks/999/toggle").status_code == 404
+
+
+class TestReindex:
+    def test_reindex_starts(self, client, monkeypatch):
+        started = []
+
+        async def fake_run():
+            started.append(True)
+
+        monkeypatch.setattr(api_module.indexer, "run_index", fake_run)
+        assert client.post("/api/reindex").json()["started"] is True
+
+    def test_reindex_refused_while_running(self, client, monkeypatch):
+        monkeypatch.setitem(api_module.indexer.progress, "phase", "embedding")
+        data = client.post("/api/reindex").json()
+        assert data["started"] is False
+        assert data["progress"]["phase"] == "embedding"
+
+
+class TestChat:
+    def test_requires_user_last_message(self, client):
+        r = client.post("/api/chat", json={"messages": [], "model": "ollama"})
+        assert r.status_code == 400
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "assistant", "content": "x"}], "model": "ollama"},
+        )
+        assert r.status_code == 400
+
+    def test_claude_returns_error_event(self, client):
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "claude"},
+        )
+        assert r.status_code == 200
+        assert "event: error" in r.text
+        assert "not implemented yet" in r.text
+
+    def test_streams_tokens_then_done(self, client, monkeypatch):
+        async def fake_answer(history, use_context):
+            assert use_context is True
+            yield "Hello "
+            yield "you"
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={
+                "messages": [{"role": "user", "content": "hi"}],
+                "model": "ollama",
+                "use_context": True,
+            },
+        )
+        assert r.headers["content-type"].startswith("text/event-stream")
+        assert 'data: {"token": "Hello "}' in r.text
+        assert 'data: {"token": "you"}' in r.text
+        assert "event: done" in r.text
+
+    def test_stream_failure_emits_error_event(self, client, monkeypatch):
+        async def broken(history, use_context):
+            yield "partial"
+            raise RuntimeError("ollama died")
+
+        monkeypatch.setattr(api_module, "stream_answer", broken)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "ollama"},
+        )
+        assert 'data: {"token": "partial"}' in r.text
+        assert "event: error" in r.text
+        assert "ollama died" in r.text
