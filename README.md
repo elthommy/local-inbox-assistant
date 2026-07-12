@@ -125,3 +125,8 @@ npm run test:watch       # watch mode
   rebuild from scratch.
 - **Claude (step 2)**: `backend/app/llm/claude.py` is the placeholder provider;
   the settings drawer and model dropdown already reserve the UI slots.
+
+## License
+
+[MIT](LICENSE). All dependencies are under MIT-compatible permissive licenses
+(MIT, BSD-3-Clause, Apache-2.0).
