@@ -12,6 +12,8 @@ vi.mock('../api.js', () => ({
     tasks: vi.fn(),
     events: vi.fn(),
     mutedSenders: vi.fn(),
+    settings: vi.fn(),
+    updateSettings: vi.fn(),
     toggleTask: vi.fn(),
     dismissEmail: vi.fn(),
     muteSender: vi.fn(),
@@ -73,6 +75,8 @@ beforeEach(() => {
   api.tasks.mockResolvedValue(TASKS)
   api.events.mockResolvedValue(EVENTS)
   api.mutedSenders.mockResolvedValue([])
+  api.settings.mockResolvedValue({ window_days: 90, extraction_window_days: 14, extraction_max_emails: 300 })
+  api.updateSettings.mockResolvedValue({ window_days: 90, extraction_window_days: 30, extraction_max_emails: 300 })
   api.toggleTask.mockResolvedValue({ id: 11, done: true })
   api.dismissEmail.mockResolvedValue({ id: 1, dismissed: true })
   api.muteSender.mockResolvedValue({ sender_email: 'sarah@corp.com', muted: true })
@@ -223,6 +227,35 @@ describe('App', () => {
     expect(
       screen.getByText('claude mcp add localmail -- uv --directory /home/user/project/backend run python mcp_server.py'),
     ).toBeInTheDocument()
+  })
+
+  it('edits indexing settings from the drawer', async () => {
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    const input = screen.getByLabelText('extraction window (days)')
+    expect(input).toHaveValue(14)
+    // save is disabled until something changes
+    expect(screen.getByText('save')).toBeDisabled()
+    await userEvent.clear(input)
+    await userEvent.type(input, '30')
+    await userEvent.click(screen.getByText('save'))
+    expect(api.updateSettings).toHaveBeenCalledWith({
+      window_days: 90,
+      extraction_window_days: 30,
+      extraction_max_emails: 300,
+    })
+    expect(input).toHaveValue(30) // reflects the saved response
+  })
+
+  it('disables save on invalid settings input', async () => {
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    const input = screen.getByLabelText('index window (days)')
+    await userEvent.clear(input)
+    expect(screen.getByText('save')).toBeDisabled()
+    expect(api.updateSettings).not.toHaveBeenCalled()
   })
 
   it('disables the Claude model option', async () => {

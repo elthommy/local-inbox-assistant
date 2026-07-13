@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import router
-from .db import init_db
+from .db import apply_setting_overrides, init_db
 from .indexer import run_index
 
 logging.basicConfig(level=logging.INFO)
@@ -15,6 +15,7 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    apply_setting_overrides()
     # Kick an incremental index in the background on startup.
     index_task = asyncio.create_task(run_index())
     yield

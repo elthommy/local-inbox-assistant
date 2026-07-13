@@ -535,7 +535,77 @@ function IndexProgress({ progress }) {
   )
 }
 
-function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute }) {
+const TUNABLE_FIELDS = [
+  { key: 'window_days', label: 'index window (days)', hint: 'mail newer than this is parsed + embedded' },
+  { key: 'extraction_window_days', label: 'extraction window (days)', hint: 'mail newer than this gets priority/tasks/events' },
+  { key: 'extraction_max_emails', label: 'extraction max emails / run', hint: 'LLM-call budget per indexing run' },
+]
+
+function IndexingSettings({ tunables, onSave }) {
+  const [draft, setDraft] = useState(null)
+  useEffect(() => {
+    setDraft(tunables ? Object.fromEntries(TUNABLE_FIELDS.map((f) => [f.key, String(tunables[f.key])])) : null)
+  }, [tunables])
+
+  if (!draft) return <div style={{ fontFamily: MONO, fontSize: 11, color: '#6b7280' }}>…</div>
+  const parsed = Object.fromEntries(TUNABLE_FIELDS.map((f) => [f.key, parseInt(draft[f.key], 10)]))
+  const valid = TUNABLE_FIELDS.every((f) => Number.isInteger(parsed[f.key]) && parsed[f.key] >= 1)
+  const dirty = tunables && TUNABLE_FIELDS.some((f) => parsed[f.key] !== tunables[f.key])
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {TUNABLE_FIELDS.map((f) => (
+        <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>{f.label}</div>
+            <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280', marginTop: 1 }}>{f.hint}</div>
+          </div>
+          <input
+            type="number"
+            min="1"
+            value={draft[f.key]}
+            aria-label={f.label}
+            onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+            style={{
+              width: 70,
+              background: '#0e1116',
+              border: '1px solid #262b33',
+              color: '#e8eaed',
+              fontFamily: MONO,
+              fontSize: 12,
+              padding: '6px 8px',
+              borderRadius: 6,
+              outline: 'none',
+              flex: 'none',
+            }}
+          />
+        </div>
+      ))}
+      <button
+        onClick={() => onSave(parsed)}
+        disabled={!valid || !dirty}
+        style={{
+          alignSelf: 'flex-start',
+          background: valid && dirty ? '#1f6feb' : '#1a1f27',
+          border: `1px solid ${valid && dirty ? '#1f6feb' : '#262b33'}`,
+          color: valid && dirty ? '#fff' : '#5b6270',
+          fontFamily: MONO,
+          fontSize: 11,
+          padding: '6px 12px',
+          borderRadius: 6,
+          cursor: valid && dirty ? 'pointer' : 'default',
+        }}
+      >
+        save
+      </button>
+      <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280' }}>
+        applies from the next re-index · already-extracted mail is not redone
+      </div>
+    </div>
+  )
+}
+
+function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute, tunables, onSaveSettings }) {
   const [showMcp, setShowMcp] = useState(true)
   const sectionTitle = {
     fontFamily: MONO,
@@ -641,6 +711,13 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
                 </div>
                 <Switch on={useContext} onClick={toggleContext} />
               </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>Indexing</div>
+            <div style={card}>
+              <IndexingSettings tunables={tunables} onSave={onSaveSettings} />
             </div>
           </div>
 
@@ -760,6 +837,7 @@ export default function App() {
   const [tasks, setTasks] = useState([])
   const [events, setEvents] = useState([])
   const [mutedSenders, setMutedSenders] = useState([])
+  const [tunables, setTunables] = useState(null)
   const [model, setModel] = useState('ollama')
   const [useContext, setUseContext] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -774,12 +852,20 @@ export default function App() {
 
   const refreshData = useCallback(async () => {
     try {
-      const [st, em, tk, ev, ms] = await Promise.all([api.stats(), api.emails(filter), api.tasks(), api.events(), api.mutedSenders()])
+      const [st, em, tk, ev, ms, tu] = await Promise.all([
+        api.stats(),
+        api.emails(filter),
+        api.tasks(),
+        api.events(),
+        api.mutedSenders(),
+        api.settings(),
+      ])
       setStats(st)
       setEmails(em)
       setTasks(tk)
       setEvents(ev)
       setMutedSenders(ms)
+      setTunables(tu)
       setLoadError(null)
     } catch (e) {
       setLoadError(String(e.message || e))
@@ -901,6 +987,15 @@ export default function App() {
       await refreshData()
     } catch {
       /* refresh keeps UI consistent even on failure */
+    }
+  }
+
+  const saveSettings = async (values) => {
+    try {
+      const saved = await api.updateSettings(values)
+      setTunables(saved)
+    } catch {
+      /* leave the draft as-is; the drawer keeps showing unsaved values */
     }
   }
 
@@ -1055,6 +1150,8 @@ export default function App() {
         onReindex={reindex}
         mutedSenders={mutedSenders}
         onUnmute={muteSender}
+        tunables={tunables}
+        onSaveSettings={saveSettings}
       />
     </div>
   )

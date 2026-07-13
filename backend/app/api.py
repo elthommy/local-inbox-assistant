@@ -6,10 +6,10 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import indexer, rag
-from .db import get_conn, get_meta, triage_filter
+from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .chat import stream_answer
 from .config import settings
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
@@ -234,6 +234,29 @@ def list_muted_senders():
             "ORDER BY created_utc DESC"
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+class SettingsUpdate(BaseModel):
+    window_days: int | None = Field(default=None, ge=1, le=3650)
+    extraction_window_days: int | None = Field(default=None, ge=1, le=3650)
+    extraction_max_emails: int | None = Field(default=None, ge=1, le=10000)
+
+
+@router.get("/settings")
+def read_settings():
+    return {k: getattr(settings, k) for k in TUNABLE_SETTINGS}
+
+
+@router.post("/settings")
+def update_settings(req: SettingsUpdate):
+    """Persist UI overrides (meta table) and apply them immediately; they
+    take effect from the next indexing run."""
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    with get_conn() as conn:
+        for key, value in updates.items():
+            set_meta(conn, f"setting_{key}", str(value))
+            setattr(settings, key, value)
+    return {k: getattr(settings, k) for k in TUNABLE_SETTINGS}
 
 
 @router.post("/reindex")

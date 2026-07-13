@@ -106,6 +106,19 @@ def get_conn():
         conn.close()
 
 
+# Settings tunable from the UI. Overrides live in the meta table (keys
+# "setting_<name>") and take precedence over .env / defaults.
+TUNABLE_SETTINGS = ("window_days", "extraction_window_days", "extraction_max_emails")
+
+
+def apply_setting_overrides() -> None:
+    with get_conn() as conn:
+        for key in TUNABLE_SETTINGS:
+            value = get_meta(conn, f"setting_{key}")
+            if value:
+                setattr(settings, key, int(value))
+
+
 def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default

@@ -26,6 +26,8 @@ export const api = {
   dismissEmail: (id) => postJSON(`/emails/${id}/dismiss`),
   muteSender: (senderEmail) => postJSON('/senders/mute', { sender_email: senderEmail }),
   mutedSenders: () => getJSON('/senders/muted'),
+  settings: () => getJSON('/settings'),
+  updateSettings: (values) => postJSON('/settings', values),
   reindex: () => postJSON('/reindex'),
 }
 

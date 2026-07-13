@@ -221,6 +221,50 @@ class TestMuteSender:
         assert len(client.get("/api/tasks").json()) == 1
 
 
+class TestSettings:
+    DEFAULTS = {
+        "window_days": 90,
+        "extraction_window_days": 14,
+        "extraction_max_emails": 300,
+    }
+
+    def _restore(self, monkeypatch):
+        from app.config import settings
+
+        for key, value in self.DEFAULTS.items():
+            monkeypatch.setattr(settings, key, value)
+        return settings
+
+    def test_read_defaults(self, client, monkeypatch):
+        self._restore(monkeypatch)
+        assert client.get("/api/settings").json() == self.DEFAULTS
+
+    def test_update_persists_and_applies(self, client, monkeypatch):
+        settings = self._restore(monkeypatch)
+        r = client.post("/api/settings", json={"extraction_window_days": 30}).json()
+        assert r["extraction_window_days"] == 30
+        assert r["window_days"] == 90  # untouched fields keep their value
+        assert settings.extraction_window_days == 30  # applied immediately
+        assert client.get("/api/settings").json()["extraction_window_days"] == 30
+
+    def test_override_reapplied_on_startup(self, client, monkeypatch):
+        from app.db import apply_setting_overrides
+
+        settings = self._restore(monkeypatch)
+        client.post("/api/settings", json={"window_days": 120})
+        settings.window_days = 90  # simulate a fresh process
+        apply_setting_overrides()
+        assert settings.window_days == 120
+
+    def test_rejects_invalid_values(self, client, monkeypatch):
+        self._restore(monkeypatch)
+        assert client.post("/api/settings", json={"window_days": 0}).status_code == 422
+        assert (
+            client.post("/api/settings", json={"extraction_max_emails": -5}).status_code
+            == 422
+        )
+
+
 class TestReindex:
     def test_reindex_starts(self, client, monkeypatch):
         started = []
