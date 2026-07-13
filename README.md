@@ -35,6 +35,10 @@ the UI shows it as "coming soon".
 ./start.sh             # installs deps on first run, starts everything; Ctrl-C stops it
 ```
 
+If Ollama is not running, the script tells you how to start it
+(`sudo systemctl start ollama` or `ollama serve`) but leaves that to you;
+pass `--start-ollama` to let the script launch `ollama serve` itself.
+
 By default the frontend is at http://localhost:5173 and the backend at :8000.
 Ports are configurable via env vars or a `.env` file at the repo root (see
 `.env.example`; env vars take precedence):
