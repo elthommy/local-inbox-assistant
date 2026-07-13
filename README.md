@@ -39,6 +39,12 @@ If Ollama is not running, the script tells you how to start it
 (`sudo systemctl start ollama` or `ollama serve`) but leaves that to you;
 pass `--start-ollama` to let the script launch `ollama serve` itself.
 
+If Ollama is down *and* no Claude API key is configured
+(`INBOX_ANTHROPIC_API_KEY`, in the environment, the root `.env`, or
+`backend/.env`), the script exits with an error instead of starting servers
+that have no inference backend to talk to. A key set in the root `.env` is
+exported so the backend picks it up too.
+
 By default the frontend is at http://localhost:5173 and the backend at :8000.
 Ports are configurable via env vars or a `.env` file at the repo root (see
 `.env.example`; env vars take precedence):
