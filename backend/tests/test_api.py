@@ -131,6 +131,42 @@ class TestTaskToggle:
         assert client.post("/api/tasks/999/toggle").status_code == 404
 
 
+class TestHandledEmails:
+    def test_completing_all_tasks_removes_email_from_priority(self, client):
+        seed(client)
+        task_id = client.get("/api/tasks").json()[0]["id"]
+        client.post(f"/api/tasks/{task_id}/toggle")
+        assert client.get("/api/emails?filter=priority").json() == []
+        assert client.get("/api/stats").json()["high_priority"] == 0
+        # unchecking the task brings it back
+        client.post(f"/api/tasks/{task_id}/toggle")
+        assert len(client.get("/api/emails?filter=priority").json()) == 1
+        assert client.get("/api/stats").json()["high_priority"] == 1
+
+    def test_open_task_remaining_keeps_email_in_priority(self, client):
+        eid = seed(client)
+        from app.db import get_conn
+
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO tasks(email_id, text, done) VALUES(?, 'second', 0)", (eid,)
+            )
+        task_id = client.get("/api/tasks").json()[0]["id"]
+        client.post(f"/api/tasks/{task_id}/toggle")
+        assert len(client.get("/api/emails?filter=priority").json()) == 1
+
+    def test_email_without_tasks_stays_in_priority(self, client):
+        seed(client)
+        from app.db import get_conn
+
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO emails(maildir_file, sender, subject, date_utc, priority, extracted) "
+                "VALUES('c.eml', 'Boss', 'reply please', '2026-07-11T00:00:00+00:00', 'high', 1)"
+            )
+        assert len(client.get("/api/emails?filter=priority").json()) == 2
+
+
 class TestDismiss:
     def test_dismiss_toggle_roundtrip(self, client):
         eid = seed(client)

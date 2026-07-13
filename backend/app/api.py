@@ -18,6 +18,13 @@ from .llm.ollama import OllamaClient
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
+# An email whose extracted tasks are ALL completed counts as handled and
+# leaves the priority view; emails without tasks stay until dismissed.
+NOT_HANDLED = (
+    "(NOT EXISTS(SELECT 1 FROM tasks t WHERE t.email_id = e.id) "
+    "OR EXISTS(SELECT 1 FROM tasks t WHERE t.email_id = e.id AND t.done = 0))"
+)
+
 EMAIL_LIST_COLUMNS = (
     "e.id, e.sender, e.sender_email, e.subject, e.date_utc, e.unread, "
     "e.priority, e.snippet, e.dismissed, "
@@ -91,7 +98,7 @@ def stats():
         ).fetchone()["c"]
         high = conn.execute(
             f"SELECT COUNT(*) c FROM emails e WHERE e.priority = 'high' "
-            f"AND {triage_filter()}"
+            f"AND {triage_filter()} AND {NOT_HANDLED}"
         ).fetchone()["c"]
         open_tasks = conn.execute(
             f"SELECT COUNT(*) c FROM tasks t JOIN emails e ON e.id = t.email_id "
@@ -111,10 +118,10 @@ def stats():
 
 @router.get("/emails")
 def list_emails(filter: str = "all", limit: int = 100):
-    # dismissed/muted mail stays visible in "all" (flagged, so the UI can dim
-    # it and offer undo) but is excluded from the priority view
+    # dismissed/muted/handled mail stays visible in "all" (flagged, so the UI
+    # can dim it and offer undo) but is excluded from the priority view
     where = (
-        f"WHERE e.priority = 'high' AND {triage_filter()}"
+        f"WHERE e.priority = 'high' AND {triage_filter()} AND {NOT_HANDLED}"
         if filter == "priority"
         else ""
     )

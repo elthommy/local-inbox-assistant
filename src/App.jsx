@@ -267,7 +267,7 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
   )
 }
 
-function EmailRow({ email, expanded, onToggle, onDismiss, onMute }) {
+function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo }) {
   const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
   const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
   const suppressed = email.dismissed || email.muted
@@ -283,6 +283,7 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute }) {
   }
   return (
     <div
+      id={`email-${email.id}`}
       onClick={onToggle}
       style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', opacity: suppressed ? 0.55 : 1 }}
     >
@@ -364,6 +365,18 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute }) {
             ))}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            {onGoTo && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onGoTo()
+                }}
+                style={actionBtn}
+                title="Show this email in the all mail tab"
+              >
+                ✉ show in all mail
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -393,11 +406,11 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute }) {
   )
 }
 
-function DismissSourceButton({ onDismiss }) {
+function RowIconButton({ icon, title, onClick, hoverColor, hoverBorder }) {
   return (
     <button
-      onClick={onDismiss}
-      title="Not important — dismiss the source email (removes all its tasks and events)"
+      onClick={onClick}
+      title={title}
       style={{
         background: 'none',
         border: '1px solid transparent',
@@ -410,20 +423,44 @@ function DismissSourceButton({ onDismiss }) {
         flex: 'none',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.color = '#F87171'
-        e.currentTarget.style.borderColor = '#4a1f1f'
+        e.currentTarget.style.color = hoverColor
+        e.currentTarget.style.borderColor = hoverBorder
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.color = '#5b6270'
         e.currentTarget.style.borderColor = 'transparent'
       }}
     >
-      ✕
+      {icon}
     </button>
   )
 }
 
-function TaskRow({ task, onToggle, onDismiss }) {
+function GoToEmailButton({ onGoTo }) {
+  return (
+    <RowIconButton
+      icon="✉"
+      title="Show source email in all mail"
+      onClick={onGoTo}
+      hoverColor="#7dd3fc"
+      hoverBorder="#2a5a8c"
+    />
+  )
+}
+
+function DismissSourceButton({ onDismiss }) {
+  return (
+    <RowIconButton
+      icon="✕"
+      title="Not important — dismiss the source email (removes all its tasks and events)"
+      onClick={onDismiss}
+      hoverColor="#F87171"
+      hoverBorder="#4a1f1f"
+    />
+  )
+}
+
+function TaskRow({ task, onToggle, onDismiss, onGoTo }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -452,12 +489,13 @@ function TaskRow({ task, onToggle, onDismiss }) {
           {task.due ? ` · due ${task.due}` : ''}
         </div>
       </div>
+      <GoToEmailButton onGoTo={onGoTo} />
       <DismissSourceButton onDismiss={onDismiss} />
     </div>
   )
 }
 
-function EventRow({ event, onDismiss }) {
+function EventRow({ event, onDismiss, onGoTo }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -481,6 +519,7 @@ function EventRow({ event, onDismiss }) {
           {event.time ? `${event.time} · ` : ''}from {event.source}
         </div>
       </div>
+      <GoToEmailButton onGoTo={onGoTo} />
       <DismissSourceButton onDismiss={onDismiss} />
     </div>
   )
@@ -726,6 +765,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [filter, setFilter] = useState('priority')
   const [expandedId, setExpandedId] = useState(null)
+  const [pendingScrollId, setPendingScrollId] = useState(null)
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [messages, setMessages] = useState([])
@@ -827,6 +867,23 @@ export default function App() {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
     }
   }
+
+  // jump to an email in "all mail": switch tab, expand it, scroll it into
+  // view once the list for the new filter has rendered
+  const goToEmail = (emailId) => {
+    setExpandedId(emailId)
+    setPendingScrollId(emailId)
+    setFilter('all')
+  }
+
+  useEffect(() => {
+    if (pendingScrollId === null) return
+    const el = document.getElementById(`email-${pendingScrollId}`)
+    if (el) {
+      if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setPendingScrollId(null)
+    }
+  }, [pendingScrollId, emails])
 
   // both change what several tabs and counters show → refetch everything
   const dismissEmail = async (id) => {
@@ -957,6 +1014,7 @@ export default function App() {
                   onToggle={() => setExpandedId((cur) => (cur === e.id ? null : e.id))}
                   onDismiss={() => dismissEmail(e.id)}
                   onMute={() => muteSender(e.sender_email)}
+                  onGoTo={filter === 'priority' ? () => goToEmail(e.id) : null}
                 />
               ))}
             {(filter === 'priority' || filter === 'all') && emails.length === 0 && !loadError && (
@@ -966,12 +1024,21 @@ export default function App() {
             )}
             {filter === 'tasks' &&
               tasks.map((t) => (
-                <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDismiss={() => dismissEmail(t.email_id)} />
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  onToggle={() => toggleTask(t.id)}
+                  onDismiss={() => dismissEmail(t.email_id)}
+                  onGoTo={() => goToEmail(t.email_id)}
+                />
               ))}
             {filter === 'tasks' && tasks.length === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no tasks extracted yet</div>
             )}
-            {filter === 'events' && events.map((ev) => <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} />)}
+            {filter === 'events' &&
+              events.map((ev) => (
+                <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} onGoTo={() => goToEmail(ev.email_id)} />
+              ))}
             {filter === 'events' && events.length === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no events extracted yet</div>
             )}

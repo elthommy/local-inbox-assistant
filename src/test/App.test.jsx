@@ -171,6 +171,25 @@ describe('App', () => {
     expect(api.dismissEmail).toHaveBeenCalledWith(1)
   })
 
+  it('jumps to the source email in all mail from the task view', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('tasks (1)'))
+    await screen.findByText('Review Q3 report')
+    api.emails.mockClear()
+    await userEvent.click(screen.getByTitle('Show source email in all mail'))
+    expect(api.emails).toHaveBeenLastCalledWith('all')
+    // the email row is rendered expanded (snippet visible)
+    expect(await screen.findByText(/one more pass/)).toBeInTheDocument()
+  })
+
+  it('offers "show in all mail" on priority emails', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    api.emails.mockClear()
+    await userEvent.click(screen.getByText('✉ show in all mail'))
+    expect(api.emails).toHaveBeenLastCalledWith('all')
+  })
+
   it('shows tasks and toggles one through the API', async () => {
     render(<App />)
     await userEvent.click(await screen.findByText('tasks (1)'))
