@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from app.db import get_conn, init_db
+from app.db import get_conn, init_db, triage_filter
 from app import rag
 from app.llm.ollama import OllamaClient
 
@@ -75,12 +75,13 @@ def get_thread(message_id: str) -> list[dict]:
 @mcp.tool()
 def list_tasks(include_done: bool = False) -> list[dict]:
     """List action items extracted from recent emails."""
-    where = "" if include_done else "WHERE t.done = 0"
+    done = "" if include_done else "AND t.done = 0"
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT t.id, t.text, t.due, t.done, e.sender AS source, "
             f"e.subject, e.date_utc FROM tasks t "
-            f"JOIN emails e ON e.id = t.email_id {where} "
+            f"JOIN emails e ON e.id = t.email_id "
+            f"WHERE {triage_filter()} {done} "
             f"ORDER BY e.date_utc DESC"
         ).fetchall()
     return [{**dict(r), "done": bool(r["done"])} for r in rows]
@@ -91,10 +92,11 @@ def list_events(limit: int = 20) -> list[dict]:
     """List appointments/deadlines extracted from recent emails."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT ev.id, ev.title, ev.date, ev.time, e.sender AS source, "
-            "e.subject, e.date_utc FROM events ev "
-            "JOIN emails e ON e.id = ev.email_id "
-            "ORDER BY e.date_utc DESC LIMIT ?",
+            f"SELECT ev.id, ev.title, ev.date, ev.time, e.sender AS source, "
+            f"e.subject, e.date_utc FROM events ev "
+            f"JOIN emails e ON e.id = ev.email_id "
+            f"WHERE {triage_filter()} "
+            f"ORDER BY e.date_utc DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]

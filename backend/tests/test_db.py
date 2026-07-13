@@ -13,7 +13,18 @@ def test_init_is_idempotent():
             r["name"]
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-    assert {"emails", "tasks", "events", "meta"} <= tables
+    assert {"emails", "tasks", "events", "meta", "muted_senders"} <= tables
+
+
+def test_init_migrates_pre_dismissed_db():
+    # simulate a DB created before the dismissed column existed
+    with get_conn() as conn:
+        conn.execute("ALTER TABLE emails DROP COLUMN dismissed")
+    init_db()
+    with get_conn() as conn:
+        conn.execute("INSERT INTO emails(maildir_file) VALUES('a.eml')")
+        row = conn.execute("SELECT dismissed FROM emails").fetchone()
+    assert row["dismissed"] == 0
 
 
 def test_meta_roundtrip_and_upsert():

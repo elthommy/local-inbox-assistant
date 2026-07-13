@@ -10,6 +10,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from .config import settings
+from .db import triage_filter
 from .llm.ollama import OllamaClient
 
 log = logging.getLogger(__name__)
@@ -64,9 +65,13 @@ def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=settings.extraction_window_days)
     ).isoformat()
+    # dismissed emails and muted senders are skipped entirely: no LLM call.
+    # They keep extracted = 0, so un-dismissing/un-muting lets a later run
+    # pick them up (while still inside the window).
     return conn.execute(
-        "SELECT * FROM emails WHERE extracted = 0 AND date_utc >= ? "
-        "ORDER BY date_utc DESC LIMIT ?",
+        f"SELECT * FROM emails e WHERE e.extracted = 0 AND e.date_utc >= ? "
+        f"AND {triage_filter()} "
+        f"ORDER BY e.date_utc DESC LIMIT ?",
         (cutoff, settings.extraction_max_emails),
     ).fetchall()
 

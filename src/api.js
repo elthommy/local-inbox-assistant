@@ -23,6 +23,9 @@ export const api = {
   tasks: () => getJSON('/tasks'),
   events: () => getJSON('/events'),
   toggleTask: (id) => postJSON(`/tasks/${id}/toggle`),
+  dismissEmail: (id) => postJSON(`/emails/${id}/dismiss`),
+  muteSender: (senderEmail) => postJSON('/senders/mute', { sender_email: senderEmail }),
+  mutedSenders: () => getJSON('/senders/muted'),
   reindex: () => postJSON('/reindex'),
 }
 

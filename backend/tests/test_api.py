@@ -106,16 +106,18 @@ class TestStatsAndLists:
         assert client.get("/api/emails/999").status_code == 404
 
     def test_tasks_include_source(self, client):
-        seed(client)
+        eid = seed(client)
         data = client.get("/api/tasks").json()
         assert data[0]["source"] == "Sarah"
         assert data[0]["done"] is False
+        assert data[0]["email_id"] == eid  # lets the UI dismiss the source email
 
     def test_events_include_source(self, client):
-        seed(client)
+        eid = seed(client)
         data = client.get("/api/events").json()
         assert data[0]["source"] == "Sarah"
         assert data[0]["date"] == "2026-07-14"
+        assert data[0]["email_id"] == eid
 
 
 class TestTaskToggle:
@@ -127,6 +129,60 @@ class TestTaskToggle:
 
     def test_toggle_404(self, client):
         assert client.post("/api/tasks/999/toggle").status_code == 404
+
+
+class TestDismiss:
+    def test_dismiss_toggle_roundtrip(self, client):
+        eid = seed(client)
+        assert client.post(f"/api/emails/{eid}/dismiss").json()["dismissed"] is True
+        assert client.post(f"/api/emails/{eid}/dismiss").json()["dismissed"] is False
+
+    def test_dismiss_404(self, client):
+        assert client.post("/api/emails/999/dismiss").status_code == 404
+
+    def test_dismissed_hidden_from_triage_but_kept_in_all(self, client):
+        eid = seed(client)
+        client.post(f"/api/emails/{eid}/dismiss")
+        assert client.get("/api/emails?filter=priority").json() == []
+        assert client.get("/api/tasks").json() == []
+        assert client.get("/api/events").json() == []
+        stats = client.get("/api/stats").json()
+        assert (stats["high_priority"], stats["open_tasks"], stats["events"]) == (0, 0, 0)
+        all_mail = client.get("/api/emails?filter=all").json()
+        flags = {e["subject"]: e["dismissed"] for e in all_mail}
+        assert flags == {"Q3 report": True, "digest": False}
+
+
+class TestMuteSender:
+    def test_mute_toggle_roundtrip(self, client):
+        seed(client)
+        r = client.post("/api/senders/mute", json={"sender_email": "Sarah@X.com"}).json()
+        assert r == {"sender_email": "sarah@x.com", "muted": True}
+        assert client.get("/api/senders/muted").json()[0]["sender_email"] == "sarah@x.com"
+        r = client.post("/api/senders/mute", json={"sender_email": "sarah@x.com"}).json()
+        assert r["muted"] is False
+        assert client.get("/api/senders/muted").json() == []
+
+    def test_mute_requires_sender(self, client):
+        assert client.post("/api/senders/mute", json={"sender_email": "  "}).status_code == 400
+
+    def test_muted_hidden_from_triage_but_kept_in_all(self, client):
+        seed(client)
+        client.post("/api/senders/mute", json={"sender_email": "sarah@x.com"})
+        assert client.get("/api/emails?filter=priority").json() == []
+        assert client.get("/api/tasks").json() == []
+        assert client.get("/api/events").json() == []
+        assert client.get("/api/stats").json()["high_priority"] == 0
+        all_mail = client.get("/api/emails?filter=all").json()
+        flags = {e["subject"]: e["muted"] for e in all_mail}
+        assert flags == {"Q3 report": True, "digest": False}
+
+    def test_unmute_restores_triage(self, client):
+        seed(client)
+        client.post("/api/senders/mute", json={"sender_email": "sarah@x.com"})
+        client.post("/api/senders/mute", json={"sender_email": "sarah@x.com"})
+        assert len(client.get("/api/emails?filter=priority").json()) == 1
+        assert len(client.get("/api/tasks").json()) == 1
 
 
 class TestReindex:

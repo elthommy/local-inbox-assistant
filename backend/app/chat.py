@@ -8,7 +8,7 @@ from datetime import datetime
 
 from . import rag
 from .config import settings
-from .db import get_conn
+from .db import get_conn, triage_filter
 from .llm.ollama import OllamaClient
 
 SYSTEM_NO_CONTEXT = """\
@@ -42,14 +42,16 @@ Answer in plain text without markdown formatting (no **, #, or tables); simple
 def _format_context_blocks() -> tuple[str, str]:
     with get_conn() as conn:
         tasks = conn.execute(
-            "SELECT t.text, t.due, e.sender FROM tasks t "
-            "JOIN emails e ON e.id = t.email_id "
-            "WHERE t.done = 0 ORDER BY e.date_utc DESC LIMIT 20"
+            f"SELECT t.text, t.due, e.sender FROM tasks t "
+            f"JOIN emails e ON e.id = t.email_id "
+            f"WHERE t.done = 0 AND {triage_filter()} "
+            f"ORDER BY e.date_utc DESC LIMIT 20"
         ).fetchall()
         events = conn.execute(
-            "SELECT ev.title, ev.date, ev.time, e.sender FROM events ev "
-            "JOIN emails e ON e.id = ev.email_id "
-            "ORDER BY e.date_utc DESC LIMIT 20"
+            f"SELECT ev.title, ev.date, ev.time, e.sender FROM events ev "
+            f"JOIN emails e ON e.id = ev.email_id "
+            f"WHERE {triage_filter()} "
+            f"ORDER BY e.date_utc DESC LIMIT 20"
         ).fetchall()
     task_lines = [
         f"- {t['text']}" + (f" (due {t['due']})" if t["due"] else "") + f" [from {t['sender']}]"

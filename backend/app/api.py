@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import indexer, rag
-from .db import get_conn, get_meta
+from .db import get_conn, get_meta, triage_filter
 from .chat import stream_answer
 from .config import settings
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
@@ -19,13 +19,18 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
 
 EMAIL_LIST_COLUMNS = (
-    "id, sender, sender_email, subject, date_utc, unread, priority, snippet"
+    "e.id, e.sender, e.sender_email, e.subject, e.date_utc, e.unread, "
+    "e.priority, e.snippet, e.dismissed, "
+    "EXISTS(SELECT 1 FROM muted_senders m "
+    "WHERE m.sender_email = LOWER(e.sender_email)) AS muted"
 )
 
 
 def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
     d = dict(row)
     d["unread"] = bool(d["unread"])
+    d["dismissed"] = bool(d["dismissed"])
+    d["muted"] = bool(d["muted"])
     if include_chips and conn is not None:
         d["tasks"] = [
             dict(t)
@@ -85,12 +90,17 @@ def stats():
             "SELECT COUNT(*) c FROM emails WHERE unread = 1"
         ).fetchone()["c"]
         high = conn.execute(
-            "SELECT COUNT(*) c FROM emails WHERE priority = 'high'"
+            f"SELECT COUNT(*) c FROM emails e WHERE e.priority = 'high' "
+            f"AND {triage_filter()}"
         ).fetchone()["c"]
         open_tasks = conn.execute(
-            "SELECT COUNT(*) c FROM tasks WHERE done = 0"
+            f"SELECT COUNT(*) c FROM tasks t JOIN emails e ON e.id = t.email_id "
+            f"WHERE t.done = 0 AND {triage_filter()}"
         ).fetchone()["c"]
-        events = conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"]
+        events = conn.execute(
+            f"SELECT COUNT(*) c FROM events ev JOIN emails e ON e.id = ev.email_id "
+            f"WHERE {triage_filter()}"
+        ).fetchone()["c"]
     return {
         "unread": unread,
         "open_tasks": open_tasks,
@@ -101,11 +111,17 @@ def stats():
 
 @router.get("/emails")
 def list_emails(filter: str = "all", limit: int = 100):
-    where = "WHERE priority = 'high'" if filter == "priority" else ""
+    # dismissed/muted mail stays visible in "all" (flagged, so the UI can dim
+    # it and offer undo) but is excluded from the priority view
+    where = (
+        f"WHERE e.priority = 'high' AND {triage_filter()}"
+        if filter == "priority"
+        else ""
+    )
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT {EMAIL_LIST_COLUMNS} FROM emails {where} "
-            f"ORDER BY date_utc DESC LIMIT ?",
+            f"SELECT {EMAIL_LIST_COLUMNS} FROM emails e {where} "
+            f"ORDER BY e.date_utc DESC LIMIT ?",
             (limit,),
         ).fetchall()
         return [_email_dict(r, include_chips=True, conn=conn) for r in rows]
@@ -115,7 +131,7 @@ def list_emails(filter: str = "all", limit: int = 100):
 def get_email(email_id: int):
     with get_conn() as conn:
         row = conn.execute(
-            f"SELECT {EMAIL_LIST_COLUMNS}, body FROM emails WHERE id = ?",
+            f"SELECT {EMAIL_LIST_COLUMNS}, e.body FROM emails e WHERE e.id = ?",
             (email_id,),
         ).fetchone()
         if row is None:
@@ -127,9 +143,11 @@ def get_email(email_id: int):
 def list_tasks():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT t.id, t.text, t.due, t.done, e.sender AS source, e.date_utc "
-            "FROM tasks t JOIN emails e ON e.id = t.email_id "
-            "ORDER BY t.done ASC, e.date_utc DESC"
+            f"SELECT t.id, t.email_id, t.text, t.due, t.done, "
+            f"e.sender AS source, e.date_utc "
+            f"FROM tasks t JOIN emails e ON e.id = t.email_id "
+            f"WHERE {triage_filter()} "
+            f"ORDER BY t.done ASC, e.date_utc DESC"
         ).fetchall()
     return [{**dict(r), "done": bool(r["done"])} for r in rows]
 
@@ -150,9 +168,63 @@ def toggle_task(task_id: int):
 def list_events():
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT ev.id, ev.title, ev.date, ev.time, e.sender AS source, e.date_utc "
-            "FROM events ev JOIN emails e ON e.id = ev.email_id "
-            "ORDER BY e.date_utc DESC"
+            f"SELECT ev.id, ev.email_id, ev.title, ev.date, ev.time, "
+            f"e.sender AS source, e.date_utc "
+            f"FROM events ev JOIN emails e ON e.id = ev.email_id "
+            f"WHERE {triage_filter()} "
+            f"ORDER BY e.date_utc DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/emails/{email_id}/dismiss")
+def dismiss_email(email_id: int):
+    """Toggle "not important": hides the email from the priority list and its
+    tasks/events from every triage surface. Reversible (soft flag)."""
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE emails SET dismissed = 1 - dismissed WHERE id = ?", (email_id,)
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(404, "email not found")
+        row = conn.execute(
+            "SELECT dismissed FROM emails WHERE id = ?", (email_id,)
+        ).fetchone()
+    return {"id": email_id, "dismissed": bool(row["dismissed"])}
+
+
+class MuteRequest(BaseModel):
+    sender_email: str
+
+
+@router.post("/senders/mute")
+def toggle_mute_sender(req: MuteRequest):
+    """Toggle a sender mute. Muted senders are excluded from triage (priority,
+    tasks, events, stats, chat context) and skipped by LLM extraction; their
+    mail stays in "all" and in semantic search."""
+    sender = req.sender_email.strip().lower()
+    if not sender:
+        raise HTTPException(400, "sender_email required")
+    with get_conn() as conn:
+        cur = conn.execute(
+            "DELETE FROM muted_senders WHERE sender_email = ?", (sender,)
+        )
+        muted = cur.rowcount == 0
+        if muted:
+            conn.execute(
+                "INSERT INTO muted_senders(sender_email, created_utc) "
+                "VALUES(?, datetime('now'))",
+                (sender,),
+            )
+    return {"sender_email": sender, "muted": muted}
+
+
+@router.get("/senders/muted")
+def list_muted_senders():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT sender_email, created_utc FROM muted_senders "
+            "ORDER BY created_utc DESC"
         ).fetchall()
     return [dict(r) for r in rows]
 

@@ -267,11 +267,25 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
   )
 }
 
-function EmailRow({ email, expanded, onToggle }) {
+function EmailRow({ email, expanded, onToggle, onDismiss, onMute }) {
   const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
   const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
+  const suppressed = email.dismissed || email.muted
+  const actionBtn = {
+    background: '#1a1f27',
+    border: '1px solid #262b33',
+    color: '#9aa1ac',
+    fontFamily: MONO,
+    fontSize: 10.5,
+    padding: '5px 10px',
+    borderRadius: 5,
+    cursor: 'pointer',
+  }
   return (
-    <div onClick={onToggle} style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px', cursor: 'pointer' }}>
+    <div
+      onClick={onToggle}
+      style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', opacity: suppressed ? 0.55 : 1 }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: priorityColor(email.priority), flex: 'none' }} />
         <span
@@ -306,7 +320,10 @@ function EmailRow({ email, expanded, onToggle }) {
             >
               {email.sender}
             </span>
-            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', flex: 'none' }}>{formatEmailTime(email.date_utc)}</span>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', flex: 'none' }}>
+              {email.muted ? '⊘ muted · ' : email.dismissed ? '✕ dismissed · ' : ''}
+              {formatEmailTime(email.date_utc)}
+            </span>
           </div>
           <div
             style={{
@@ -346,13 +363,67 @@ function EmailRow({ email, expanded, onToggle }) {
               </span>
             ))}
           </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDismiss()
+              }}
+              style={actionBtn}
+              title="Exclude this email from priority, tasks and events"
+            >
+              {email.dismissed ? '↩ restore' : '✕ not important'}
+            </button>
+            {email.sender_email && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onMute()
+                }}
+                style={actionBtn}
+                title="Exclude every email from this sender from priority, tasks and events"
+              >
+                {email.muted ? '↩ unmute sender' : '⊘ mute sender'}
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
   )
 }
 
-function TaskRow({ task, onToggle }) {
+function DismissSourceButton({ onDismiss }) {
+  return (
+    <button
+      onClick={onDismiss}
+      title="Not important — dismiss the source email (removes all its tasks and events)"
+      style={{
+        background: 'none',
+        border: '1px solid transparent',
+        color: '#5b6270',
+        fontFamily: MONO,
+        fontSize: 12,
+        padding: '4px 8px',
+        borderRadius: 5,
+        cursor: 'pointer',
+        flex: 'none',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = '#F87171'
+        e.currentTarget.style.borderColor = '#4a1f1f'
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = '#5b6270'
+        e.currentTarget.style.borderColor = 'transparent'
+      }}
+    >
+      ✕
+    </button>
+  )
+}
+
+function TaskRow({ task, onToggle, onDismiss }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -381,11 +452,12 @@ function TaskRow({ task, onToggle }) {
           {task.due ? ` · due ${task.due}` : ''}
         </div>
       </div>
+      <DismissSourceButton onDismiss={onDismiss} />
     </div>
   )
 }
 
-function EventRow({ event }) {
+function EventRow({ event, onDismiss }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -409,6 +481,7 @@ function EventRow({ event }) {
           {event.time ? `${event.time} · ` : ''}from {event.source}
         </div>
       </div>
+      <DismissSourceButton onDismiss={onDismiss} />
     </div>
   )
 }
@@ -423,7 +496,7 @@ function IndexProgress({ progress }) {
   )
 }
 
-function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex }) {
+function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute }) {
   const [showMcp, setShowMcp] = useState(true)
   const sectionTitle = {
     fontFamily: MONO,
@@ -533,6 +606,43 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
           </div>
 
           <div>
+            <div style={sectionTitle}>Muted senders</div>
+            <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {mutedSenders.length === 0 && (
+                <div style={{ fontFamily: MONO, fontSize: 11, color: '#6b7280' }}>
+                  none — use “⊘ mute sender” on an email to exclude a sender from priority, tasks and events
+                </div>
+              )}
+              {mutedSenders.map((s) => (
+                <div key={s.sender_email} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                  <span
+                    style={{ fontFamily: MONO, fontSize: 11, color: '#e2e5ea', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={s.sender_email}
+                  >
+                    ⊘ {s.sender_email}
+                  </span>
+                  <button
+                    onClick={() => onUnmute(s.sender_email)}
+                    style={{
+                      background: '#1a1f27',
+                      border: '1px solid #262b33',
+                      color: '#c4c9d1',
+                      fontFamily: MONO,
+                      fontSize: 10.5,
+                      padding: '4px 10px',
+                      borderRadius: 5,
+                      cursor: 'pointer',
+                      flex: 'none',
+                    }}
+                  >
+                    unmute
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <div style={sectionTitle}>RAG index</div>
             <div style={{ ...card, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -610,6 +720,7 @@ export default function App() {
   const [emails, setEmails] = useState([])
   const [tasks, setTasks] = useState([])
   const [events, setEvents] = useState([])
+  const [mutedSenders, setMutedSenders] = useState([])
   const [model, setModel] = useState('ollama')
   const [useContext, setUseContext] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -623,11 +734,12 @@ export default function App() {
 
   const refreshData = useCallback(async () => {
     try {
-      const [st, em, tk, ev] = await Promise.all([api.stats(), api.emails(filter), api.tasks(), api.events()])
+      const [st, em, tk, ev, ms] = await Promise.all([api.stats(), api.emails(filter), api.tasks(), api.events(), api.mutedSenders()])
       setStats(st)
       setEmails(em)
       setTasks(tk)
       setEvents(ev)
+      setMutedSenders(ms)
       setLoadError(null)
     } catch (e) {
       setLoadError(String(e.message || e))
@@ -713,6 +825,25 @@ export default function App() {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: res.done } : t)))
     } catch {
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
+    }
+  }
+
+  // both change what several tabs and counters show → refetch everything
+  const dismissEmail = async (id) => {
+    try {
+      await api.dismissEmail(id)
+      await refreshData()
+    } catch {
+      /* refresh keeps UI consistent even on failure */
+    }
+  }
+
+  const muteSender = async (senderEmail) => {
+    try {
+      await api.muteSender(senderEmail)
+      await refreshData()
+    } catch {
+      /* refresh keeps UI consistent even on failure */
     }
   }
 
@@ -819,18 +950,28 @@ export default function App() {
             )}
             {(filter === 'priority' || filter === 'all') &&
               emails.map((e) => (
-                <EmailRow key={e.id} email={e} expanded={expandedId === e.id} onToggle={() => setExpandedId((cur) => (cur === e.id ? null : e.id))} />
+                <EmailRow
+                  key={e.id}
+                  email={e}
+                  expanded={expandedId === e.id}
+                  onToggle={() => setExpandedId((cur) => (cur === e.id ? null : e.id))}
+                  onDismiss={() => dismissEmail(e.id)}
+                  onMute={() => muteSender(e.sender_email)}
+                />
               ))}
             {(filter === 'priority' || filter === 'all') && emails.length === 0 && !loadError && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
                 {filter === 'priority' ? 'no high-priority mail (yet — extraction may still be running)' : 'no mail indexed yet'}
               </div>
             )}
-            {filter === 'tasks' && tasks.map((t) => <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} />)}
+            {filter === 'tasks' &&
+              tasks.map((t) => (
+                <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDismiss={() => dismissEmail(t.email_id)} />
+              ))}
             {filter === 'tasks' && tasks.length === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no tasks extracted yet</div>
             )}
-            {filter === 'events' && events.map((ev) => <EventRow key={ev.id} event={ev} />)}
+            {filter === 'events' && events.map((ev) => <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} />)}
             {filter === 'events' && events.length === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no events extracted yet</div>
             )}
@@ -845,6 +986,8 @@ export default function App() {
         useContext={useContext}
         toggleContext={() => setUseContext((v) => !v)}
         onReindex={reindex}
+        mutedSenders={mutedSenders}
+        onUnmute={muteSender}
       />
     </div>
   )

@@ -11,7 +11,10 @@ vi.mock('../api.js', () => ({
     emails: vi.fn(),
     tasks: vi.fn(),
     events: vi.fn(),
+    mutedSenders: vi.fn(),
     toggleTask: vi.fn(),
+    dismissEmail: vi.fn(),
+    muteSender: vi.fn(),
     reindex: vi.fn(),
   },
   streamChat: vi.fn(),
@@ -46,6 +49,8 @@ const EMAILS = [
     date_utc: '2026-07-10T07:14:00+00:00',
     unread: true,
     priority: 'high',
+    dismissed: false,
+    muted: false,
     snippet: 'please take one more pass before Friday',
     tasks: [{ id: 11, text: 'Review Q3 report', due: 'Friday', done: false }],
     events: [{ id: 21, title: 'Review meeting', date: '2026-07-14', time: '10:00' }],
@@ -53,11 +58,11 @@ const EMAILS = [
 ]
 
 const TASKS = [
-  { id: 11, text: 'Review Q3 report', due: 'Friday', done: false, source: 'Sarah Chen', date_utc: '2026-07-10' },
+  { id: 11, email_id: 1, text: 'Review Q3 report', due: 'Friday', done: false, source: 'Sarah Chen', date_utc: '2026-07-10' },
 ]
 
 const EVENTS = [
-  { id: 21, title: 'Review meeting', date: '2026-07-14', time: '10:00', source: 'Sarah Chen', date_utc: '2026-07-10' },
+  { id: 21, email_id: 1, title: 'Review meeting', date: '2026-07-14', time: '10:00', source: 'Sarah Chen', date_utc: '2026-07-10' },
 ]
 
 beforeEach(() => {
@@ -67,7 +72,10 @@ beforeEach(() => {
   api.emails.mockResolvedValue(EMAILS)
   api.tasks.mockResolvedValue(TASKS)
   api.events.mockResolvedValue(EVENTS)
+  api.mutedSenders.mockResolvedValue([])
   api.toggleTask.mockResolvedValue({ id: 11, done: true })
+  api.dismissEmail.mockResolvedValue({ id: 1, dismissed: true })
+  api.muteSender.mockResolvedValue({ sender_email: 'sarah@corp.com', muted: true })
 })
 
 describe('App', () => {
@@ -111,6 +119,56 @@ describe('App', () => {
     expect(api.emails).toHaveBeenLastCalledWith('priority')
     await userEvent.click(screen.getByText('all mail (2106)'))
     expect(api.emails).toHaveBeenLastCalledWith('all')
+  })
+
+  it('dismisses an email through the API and refreshes the lists', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    api.emails.mockClear()
+    await userEvent.click(screen.getByText('✕ not important'))
+    expect(api.dismissEmail).toHaveBeenCalledWith(1)
+    expect(api.emails).toHaveBeenCalled() // refetched after the change
+  })
+
+  it('mutes a sender through the API', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    await userEvent.click(screen.getByText('⊘ mute sender'))
+    expect(api.muteSender).toHaveBeenCalledWith('sarah@corp.com')
+  })
+
+  it('marks dismissed emails and offers restore', async () => {
+    api.emails.mockResolvedValue([{ ...EMAILS[0], dismissed: true }])
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    expect(screen.getByText(/✕ dismissed ·/)).toBeInTheDocument()
+    expect(screen.getByText('↩ restore')).toBeInTheDocument()
+  })
+
+  it('lists muted senders in the settings drawer and unmutes from there', async () => {
+    api.mutedSenders.mockResolvedValue([{ sender_email: 'spam@news.com', created_utc: '2026-07-13' }])
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    expect(screen.getByText('⊘ spam@news.com')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('unmute'))
+    expect(api.muteSender).toHaveBeenCalledWith('spam@news.com')
+  })
+
+  it('dismisses the source email from the task view', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('tasks (1)'))
+    await screen.findByText('Review Q3 report')
+    await userEvent.click(screen.getByTitle(/dismiss the source email/i))
+    expect(api.dismissEmail).toHaveBeenCalledWith(1)
+  })
+
+  it('dismisses the source email from the events view', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('events (1)'))
+    await screen.findByText('Review meeting')
+    await userEvent.click(screen.getByTitle(/dismiss the source email/i))
+    expect(api.dismissEmail).toHaveBeenCalledWith(1)
   })
 
   it('shows tasks and toggles one through the API', async () => {

@@ -9,12 +9,12 @@ from app.extract import (
 )
 
 
-def insert_email(conn, *, file="a.eml", days_ago=1, extracted=0):
+def insert_email(conn, *, file="a.eml", days_ago=1, extracted=0, sender_email=""):
     dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
     cur = conn.execute(
-        "INSERT INTO emails(maildir_file, subject, date_utc, extracted) "
-        "VALUES(?, 's', ?, ?)",
-        (file, dt, extracted),
+        "INSERT INTO emails(maildir_file, subject, date_utc, extracted, sender_email) "
+        "VALUES(?, 's', ?, ?, ?)",
+        (file, dt, extracted, sender_email),
     )
     return cur.lastrowid
 
@@ -30,6 +30,19 @@ class TestEmailsNeedingExtraction:
         with get_conn() as conn:
             rows = emails_needing_extraction(conn)
         assert [r["id"] for r in rows] == [recent]
+
+    def test_skips_dismissed_and_muted(self):
+        with get_conn() as conn:
+            kept = insert_email(conn, file="kept.eml", sender_email="ok@x.com")
+            dismissed = insert_email(conn, file="dis.eml")
+            conn.execute("UPDATE emails SET dismissed = 1 WHERE id = ?", (dismissed,))
+            insert_email(conn, file="muted.eml", sender_email="Spam@News.com")
+            conn.execute(
+                "INSERT INTO muted_senders(sender_email) VALUES('spam@news.com')"
+            )
+        with get_conn() as conn:
+            rows = emails_needing_extraction(conn)
+        assert [r["id"] for r in rows] == [kept]
 
     def test_respects_max_limit(self, monkeypatch):
         monkeypatch.setattr(settings, "extraction_max_emails", 3)

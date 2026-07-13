@@ -36,10 +36,15 @@ describe('api', () => {
     const fetchMock = vi.fn(() => jsonResponse({ done: true }))
     vi.stubGlobal('fetch', fetchMock)
     await api.toggleTask(7)
+    await api.dismissEmail(3)
+    await api.muteSender('spam@news.com')
     await api.reindex()
     expect(fetchMock.mock.calls[0][0]).toBe('/api/tasks/7/toggle')
     expect(fetchMock.mock.calls[0][1].method).toBe('POST')
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/reindex')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/emails/3/dismiss')
+    expect(fetchMock.mock.calls[2][0]).toBe('/api/senders/mute')
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({ sender_email: 'spam@news.com' })
+    expect(fetchMock.mock.calls[3][0]).toBe('/api/reindex')
   })
 
   it('throws on non-ok responses', async () => {

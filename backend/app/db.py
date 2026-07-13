@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS emails (
     refs TEXT,                   -- References header (space-separated ids)
     priority TEXT,               -- high | medium | low | NULL (not extracted)
     extracted INTEGER DEFAULT 0, -- extraction pass done
-    embedded INTEGER DEFAULT 0   -- chunks stored in chroma
+    embedded INTEGER DEFAULT 0,  -- chunks stored in chroma
+    dismissed INTEGER DEFAULT 0  -- user marked "not important"
 );
 CREATE INDEX IF NOT EXISTS idx_emails_date ON emails(date_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_emails_msgid ON emails(message_id);
@@ -51,7 +52,17 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS muted_senders (
+    sender_email TEXT PRIMARY KEY, -- lowercase
+    created_utc TEXT
+);
 """
+
+# Columns added after the initial release; applied to pre-existing DBs on startup.
+MIGRATIONS = [
+    ("emails", "dismissed", "ALTER TABLE emails ADD COLUMN dismissed INTEGER DEFAULT 0"),
+]
 
 
 def connect() -> sqlite3.Connection:
@@ -65,6 +76,24 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
+        for table, column, ddl in MIGRATIONS:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                conn.execute(ddl)
+        conn.commit()
+
+
+def triage_filter(alias: str = "e") -> str:
+    """SQL condition: email not dismissed and its sender not muted.
+
+    Applied wherever triage output is surfaced (priority list, tasks, events,
+    stats, chat context) — NOT to plain mail listing or search.
+    """
+    return (
+        f"{alias}.dismissed = 0 AND NOT EXISTS "
+        f"(SELECT 1 FROM muted_senders m "
+        f"WHERE m.sender_email = LOWER({alias}.sender_email))"
+    )
 
 
 @contextmanager
