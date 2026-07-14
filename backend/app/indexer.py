@@ -19,7 +19,7 @@ from .extract import (
     store_extraction,
 )
 from .llm.ollama import OllamaClient
-from .mail.maildir import scan_window
+from .mail.maildir import rel_name, scan_window
 from .mail.parser import parse_eml
 
 log = logging.getLogger(__name__)
@@ -34,10 +34,27 @@ EMAIL_COLUMNS = (
 
 
 def _store_parsed(parsed: list[dict]) -> list[int]:
-    """Insert parsed emails, returning rowids of genuinely new ones."""
+    """Insert parsed emails, returning rowids of genuinely new ones.
+
+    A message whose Message-ID is already indexed (Gmail labels sync the same
+    message into several folders) is not inserted again; its file is recorded
+    in seen_files so later scans skip it."""
     new_ids = []
     with get_conn() as conn:
+        known_msgids = {
+            r["message_id"]
+            for r in conn.execute(
+                "SELECT message_id FROM emails WHERE message_id != ''"
+            )
+        }
         for e in parsed:
+            msgid = e["message_id"]
+            if msgid and msgid in known_msgids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO seen_files(maildir_file) VALUES(?)",
+                    (e["maildir_file"],),
+                )
+                continue
             cur = conn.execute(
                 f"INSERT OR IGNORE INTO emails({','.join(EMAIL_COLUMNS)}) "
                 f"VALUES({','.join('?' * len(EMAIL_COLUMNS))})",
@@ -45,6 +62,8 @@ def _store_parsed(parsed: list[dict]) -> list[int]:
             )
             if cur.rowcount:
                 new_ids.append(cur.lastrowid)
+                if msgid:
+                    known_msgids.add(msgid)
     return new_ids
 
 
@@ -69,7 +88,10 @@ async def _run(do_extract: bool) -> None:
     with get_conn() as conn:
         known = {
             r["maildir_file"]
-            for r in conn.execute("SELECT maildir_file FROM emails")
+            for r in conn.execute(
+                "SELECT maildir_file FROM emails "
+                "UNION SELECT maildir_file FROM seen_files"
+            )
         }
     new_files = await asyncio.to_thread(scan_window, known)
 
@@ -79,6 +101,7 @@ async def _run(do_extract: bool) -> None:
         try:
             e = await asyncio.to_thread(parse_eml, path)
             if e:
+                e["maildir_file"] = rel_name(path)
                 parsed.append(e)
         except Exception:
             log.warning("failed to parse %s", path.name)

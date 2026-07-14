@@ -7,6 +7,7 @@ from app.mail.maildir import scan_window, window_start
 
 def make_eml(name: str, dt: datetime, mtime: datetime | None = None):
     p = settings.maildir / name
+    p.parent.mkdir(parents=True, exist_ok=True)
     date_hdr = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
     p.write_bytes(
         f"From: x@y.z\nSubject: {name}\nDate: {date_hdr}\n\nbody\n".encode()
@@ -60,7 +61,35 @@ def test_undated_file_is_skipped():
     assert scan_window() == []
 
 
-def test_directories_are_ignored():
-    (settings.maildir / "subdir").mkdir()
+def test_subfolders_are_scanned_recursively():
+    make_eml("ImapMail/imap.gmail.com/INBOX/cur/inbox.eml", days_ago(2))
+    make_eml("ImapMail/imap.orange.fr/INBOX/cur/orange.eml", days_ago(1))
+    names = [p.name for p in scan_window()]
+    assert names == ["inbox.eml", "orange.eml"]
+
+
+def test_known_files_keyed_by_relative_path():
+    make_eml("a/cur/seen.eml", days_ago(2))
+    make_eml("b/cur/new.eml", days_ago(1))
+    names = [p.name for p in scan_window(known_files={"a/cur/seen.eml"})]
+    assert names == ["new.eml"]
+
+
+def test_excluded_folders_are_pruned():
+    make_eml("Trash/cur/binned.eml", days_ago(1))
+    make_eml("[Gmail].sbd/All Mail/cur/dupe.eml", days_ago(1))
+    make_eml("INBOX/cur/kept.eml", days_ago(1))
+    assert [p.name for p in scan_window()] == ["kept.eml"]
+
+
+def test_excluding_a_folder_also_prunes_its_sbd_subfolders():
+    # subfolders of "Trash" live in "Trash.sbd/"; they go with their parent
+    make_eml("Trash.sbd/Keep Me/cur/sub.eml", days_ago(1))
+    assert scan_window() == []
+
+
+def test_non_eml_files_are_ignored():
     make_eml("ok.eml", days_ago(1))
+    p = settings.maildir / "index.msf"
+    p.write_bytes(b"not a mail")
     assert [p.name for p in scan_window()] == ["ok.eml"]

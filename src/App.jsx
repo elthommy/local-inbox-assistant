@@ -701,7 +701,7 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
             <div style={card}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Thunderbird Gmail inbox (.eml)</div>
+                  <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Thunderbird mailboxes (.eml)</div>
                   <div
                     style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                     title={index?.maildir}

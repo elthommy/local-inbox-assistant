@@ -5,12 +5,14 @@ from app.config import settings
 from app.db import get_conn, get_meta
 
 
-def make_eml(name, subject="hello", days_ago=1, body="some body text"):
+def make_eml(name, subject="hello", days_ago=1, body="some body text", msgid=None):
     dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
     date_hdr = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    (settings.maildir / name).write_bytes(
+    path = settings.maildir / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(
         f"From: Sender <s@example.com>\nSubject: {subject}\n"
-        f"Date: {date_hdr}\nMessage-ID: <{name}@x>\n\n{body}\n".encode()
+        f"Date: {date_hdr}\nMessage-ID: <{msgid or name}@x>\n\n{body}\n".encode()
     )
 
 
@@ -26,6 +28,28 @@ def test_store_parsed_ignores_duplicates():
     assert second == []
     with get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"] == 1
+
+
+async def test_label_copy_in_other_folder_indexed_once(fake_embed):
+    # Gmail syncs one labeled message into several folders; only the first
+    # copy becomes an email row, the other file lands in seen_files
+    make_eml("INBOX/cur/a.eml", msgid="same")
+    make_eml("Agenda/cur/b.eml", msgid="same")
+    await indexer.run_index(do_extract=False)
+    await indexer.run_index(do_extract=False)  # rerun must not reparse the copy
+    with get_conn() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"] == 1
+        seen = [r["maildir_file"] for r in conn.execute("SELECT maildir_file FROM seen_files")]
+    assert seen in (["INBOX/cur/a.eml"], ["Agenda/cur/b.eml"])
+    assert rag.chunk_count() == 1
+
+
+async def test_emails_stored_with_relative_paths(fake_embed):
+    make_eml("ImapMail/host/INBOX/cur/one.eml")
+    await indexer.run_index(do_extract=False)
+    with get_conn() as conn:
+        row = conn.execute("SELECT maildir_file FROM emails").fetchone()
+    assert row["maildir_file"] == "ImapMail/host/INBOX/cur/one.eml"
 
 
 async def test_full_run_parses_embeds_extracts(fake_embed, monkeypatch):

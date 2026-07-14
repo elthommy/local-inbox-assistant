@@ -1,7 +1,8 @@
 # local-inbox-assistant
 
-A fully local, AI-assisted inbox dashboard. It indexes your Thunderbird Gmail
-maildir (`.eml` files), answers questions about your mail with a local Ollama
+A fully local, AI-assisted inbox dashboard. It indexes every mailbox folder of
+your Thunderbird profile (`.eml` files across all accounts), answers questions
+about your mail with a local Ollama
 model over a RAG index, extracts tasks / events / priority from recent emails,
 and exposes the same data to other AI tools through an MCP server.
 
@@ -67,7 +68,17 @@ npm run dev            # http://localhost:5173 (proxies /api to :8000)
 ```
 
 Backend configuration lives in `backend/.env` (see `backend/.env.example`):
-maildir path, indexing window, model names, Ollama URL.
+mail root path, excluded folders, indexing window, model names, Ollama URL.
+
+### Which folders are indexed
+
+`INBOX_MAILDIR` (default: the Thunderbird profile directory) is scanned
+recursively; every folder containing `.eml` files is indexed, across all
+accounts. Folders named in `INBOX_EXCLUDE_FOLDERS` are skipped — by default
+`Trash, Junk, Spam, Drafts, Unsent Messages, All Mail` (Gmail's "All Mail" is
+a duplicate archive of every label). Excluding a folder also excludes its
+subfolders. A message synced into several folders (Gmail labels) is indexed
+once, keyed by its Message-ID.
 
 ## MCP server
 
@@ -97,7 +108,7 @@ uv run pytest -v tests/test_parser.py   # a single file, verbose
 | File | Covers |
 |------|--------|
 | `tests/test_parser.py` | `.eml` parsing: plain/HTML/multipart bodies, UTF-8 / quoted-printable / ISO-8859-1 (French), missing date/subject/sender, snippet+body truncation, unread detection (X-Mozilla-Status, maildir flags), thread headers, cheap date-only probe |
-| `tests/test_maildir.py` | 90-day window scan: date filtering, mtime pre-filter vs old resynced mail, already-indexed skip, oldest-first sort, undated files, subdirectories |
+| `tests/test_maildir.py` | 90-day window scan: date filtering, mtime pre-filter vs old resynced mail, already-indexed skip (relative-path keys), oldest-first sort, undated files, recursive multi-folder scan, folder exclusions (incl. `.sbd` subfolder containers), non-`.eml` files ignored |
 | `tests/test_chunking.py` | chunking: sizes, overlap, paragraph-boundary preference, full-text coverage, micro-chunk tail regression, per-email chunk docs (header prefix, ids, metadata) |
 | `tests/test_rag_store.py` | Chroma store: index/search roundtrip, idempotent upsert, deletes, empty index, and `search_emails` per-email dedup/caps |
 | `tests/test_db.py` | schema idempotence, meta upsert, maildir-file uniqueness, task/event cascade delete |
@@ -105,7 +116,7 @@ uv run pytest -v tests/test_parser.py   # a single file, verbose
 | `tests/test_chat.py` | RAG prompt building: context vs no-context system prompts, excerpt/task/event injection, done-task exclusion, 12-message history cap, stream orchestration |
 | `tests/test_ollama_client.py` | Ollama HTTP client (mocked with respx): availability, model list, token streaming, `think:false` only for thinking-capable models (cached probe), JSON mode with schema, embeddings, error surfacing |
 | `tests/test_claude_placeholder.py` | the step-2 Claude stub: unavailable, key detection, explicit NotImplementedError |
-| `tests/test_indexer.py` | full pipeline on synthetic maildirs: parse→embed→extract, incremental re-runs (one extraction per email ever), duplicate insert skip, per-email parse/extract failure tolerance, error phase reporting, `do_extract=False` |
+| `tests/test_indexer.py` | full pipeline on synthetic maildirs: parse→embed→extract, incremental re-runs (one extraction per email ever), duplicate insert skip, cross-folder Message-ID dedup (Gmail label copies), relative-path storage, per-email parse/extract failure tolerance, error phase reporting, `do_extract=False` |
 | `tests/test_api.py` | FastAPI routes via TestClient: `/status` (ollama up/down), `/stats`, email list/filter/detail/404, tasks with toggle roundtrip + 404, events, reindex start/refusal-while-running, chat validation (400), Claude SSE error event, SSE token stream + done, mid-stream failure error event |
 
 Frontend — **Vitest + React Testing Library** (35 tests, jsdom). Vitest is the

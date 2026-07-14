@@ -57,6 +57,13 @@ CREATE TABLE IF NOT EXISTS muted_senders (
     sender_email TEXT PRIMARY KEY, -- lowercase
     created_utc TEXT
 );
+
+-- Maildir files scanned but not stored as emails: duplicate copies of a
+-- message already indexed from another folder (Gmail labels sync the same
+-- message into several folders). Listed here so later scans skip them.
+CREATE TABLE IF NOT EXISTS seen_files (
+    maildir_file TEXT PRIMARY KEY
+);
 """
 
 # Columns added after the initial release; applied to pre-existing DBs on startup.

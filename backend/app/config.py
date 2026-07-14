@@ -11,9 +11,12 @@ class Settings(BaseSettings):
         env_file=BACKEND_DIR / ".env", env_prefix="INBOX_", extra="ignore"
     )
 
-    maildir: Path = Path(
-        "~/.thunderbird/xxxxxxxx.default-release/ImapMail/imap.gmail.com/INBOX/cur"
-    ).expanduser()
+    # Root scanned recursively for .eml files; every mailbox folder under it
+    # is indexed. Pointing it at a single folder's cur/ dir still works.
+    maildir: Path = Path("~/.thunderbird/xxxxxxxx.default-release").expanduser()
+    # Folder names skipped during the scan (comma-separated, case-insensitive).
+    # "All Mail" is the Gmail label archive: pure duplicates of other folders.
+    exclude_folders: str = "Trash,Junk,Spam,Drafts,Unsent Messages,All Mail"
     window_days: int = 90
     extraction_window_days: int = 14
     extraction_max_emails: int = 300
