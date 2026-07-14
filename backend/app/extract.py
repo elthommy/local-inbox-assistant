@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from .config import settings
 from .db import triage_filter
+from .event_dates import resolve_event_date
 from .llm.ollama import OllamaClient
 
 log = logging.getLogger(__name__)
@@ -109,15 +110,20 @@ def store_extraction(conn: sqlite3.Connection, email_id: int, result: dict) -> N
                 "INSERT INTO tasks(email_id, text, due) VALUES(?, ?, ?)",
                 (email_id, text[:200], (task.get("due") or "").strip()[:60]),
             )
+    email_row = conn.execute(
+        "SELECT date_utc FROM emails WHERE id = ?", (email_id,)
+    ).fetchone()
+    email_date = email_row["date_utc"] if email_row else ""
     for event in result.get("events", [])[:5]:
         title = (event.get("title") or "").strip()
         if title:
+            raw_date = (event.get("date") or "").strip()[:60]
             conn.execute(
                 "INSERT INTO events(email_id, title, date, time) VALUES(?, ?, ?, ?)",
                 (
                     email_id,
                     title[:200],
-                    (event.get("date") or "").strip()[:60],
+                    resolve_event_date(raw_date, email_date or "") or raw_date,
                     (event.get("time") or "").strip()[:60],
                 ),
             )
