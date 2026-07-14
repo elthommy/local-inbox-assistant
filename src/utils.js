@@ -10,7 +10,25 @@ export function priorityColor(p) {
   return p === 'high' ? '#F87171' : p === 'medium' ? '#FBBF24' : p === 'low' ? '#4ADE80' : '#3a4048'
 }
 
-export function formatEmailTime(iso) {
+// User-selectable date rendering. 'system' delegates to the browser locale;
+// the persisted preference lives in localStorage (see App).
+export const DATE_FORMATS = [
+  { id: 'system', label: 'system locale' },
+  { id: 'dmy', label: 'DD/MM/YYYY' },
+  { id: 'mdy', label: 'MM/DD/YYYY' },
+  { id: 'ymd', label: 'YYYY-MM-DD' },
+]
+
+export function formatDate(d, fmt = 'system') {
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  if (fmt === 'dmy') return `${dd}/${mm}/${d.getFullYear()}`
+  if (fmt === 'mdy') return `${mm}/${dd}/${d.getFullYear()}`
+  if (fmt === 'ymd') return `${d.getFullYear()}-${mm}-${dd}`
+  return d.toLocaleDateString()
+}
+
+export function formatEmailTime(iso, fmt = 'system') {
   const d = new Date(iso)
   const now = new Date()
   const sameDay = (a, b) => a.toDateString() === b.toDateString()
@@ -18,7 +36,8 @@ export function formatEmailTime(iso) {
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
   if (sameDay(d, yesterday)) return 'Yesterday'
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  if (fmt === 'system') return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return formatDate(d, fmt)
 }
 
 export function relativeTime(iso) {
@@ -71,11 +90,21 @@ export function parseEventDate(raw, emailIso) {
   return d
 }
 
-export function eventDateShort(raw, emailIso) {
+export function eventDateShort(raw, emailIso, fmt = 'system') {
   if (!raw) return '—'
   const d = parseEventDate(raw, emailIso)
-  if (d) return d.toLocaleDateString('en', { month: 'short', day: 'numeric' }).toUpperCase()
-  return raw.slice(0, 8).toUpperCase()
+  if (!d) return raw.slice(0, 8).toUpperCase()
+  if (fmt === 'system') {
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()
+  }
+  return formatDate(d, fmt)
+}
+
+// Event chips inside an email row: the stored (usually ISO) date rendered in
+// the user's format; unresolvable free text is shown as written.
+export function eventChipDate(raw, emailIso, fmt = 'system') {
+  const d = parseEventDate(raw, emailIso)
+  return d ? formatDate(d, fmt) : raw
 }
 
 // Events happening today or later, soonest first. Events whose date can't be

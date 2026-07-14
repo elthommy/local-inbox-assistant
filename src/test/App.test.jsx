@@ -70,6 +70,7 @@ const EVENTS = [
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   api.status.mockResolvedValue(STATUS)
   api.stats.mockResolvedValue({ unread: 1, open_tasks: 1, events: 1, high_priority: 1 })
   api.emails.mockResolvedValue(EMAILS)
@@ -116,7 +117,9 @@ describe('App', () => {
     expect(screen.getByText(/one more pass/)).toBeInTheDocument()
     expect(screen.getByText('corp.com')).toBeInTheDocument()
     expect(screen.getByText(/☐ Review Q3 report · Friday/)).toBeInTheDocument()
-    expect(screen.getByText(/◷ Review meeting · 2026-07-14 10:00/)).toBeInTheDocument()
+    // event chip date rendered in the system locale by default
+    const chipDate = new Date(2026, 6, 14).toLocaleDateString()
+    expect(screen.getByText(`◷ Review meeting · ${chipDate} 10:00`)).toBeInTheDocument()
   })
 
   it('switches filters and requests the matching email set', async () => {
@@ -244,8 +247,21 @@ describe('App', () => {
     render(<App />)
     await userEvent.click(await screen.findByText('events (1)'))
     expect(await screen.findByText('Review meeting')).toBeInTheDocument()
-    expect(screen.getByText('JUL 14')).toBeInTheDocument()
+    const badge = new Date(2026, 6, 14)
+      .toLocaleDateString([], { month: 'short', day: 'numeric' })
+      .toUpperCase()
+    expect(screen.getByText(badge)).toBeInTheDocument()
     expect(screen.getByText(/10:00 · from Sarah Chen/)).toBeInTheDocument()
+  })
+
+  it('applies and persists the date format chosen in settings', async () => {
+    render(<App />)
+    await userEvent.click(await screen.findByText('events (1)'))
+    await screen.findByText('Review meeting')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    await userEvent.selectOptions(screen.getByLabelText('date format'), 'dmy')
+    expect(localStorage.getItem('date_format')).toBe('dmy')
+    expect(screen.getByText('14/07/2026')).toBeInTheDocument()
   })
 
   it('opens the settings drawer with real index data and MCP command', async () => {

@@ -2,7 +2,9 @@ import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   AVATAR_COLORS,
   avatarColor,
+  eventChipDate,
   eventDateShort,
+  formatDate,
   formatEmailTime,
   parseEventDate,
   priorityColor,
@@ -49,6 +51,24 @@ describe('formatEmailTime', () => {
     expect(formatEmailTime('2026-07-01T10:00:00')).toMatch(/1/)
     expect(formatEmailTime('2026-07-01T10:00:00')).not.toBe('Yesterday')
   })
+  it('honors an explicit date format for older mail', () => {
+    vi.useFakeTimers().setSystemTime(new Date('2026-07-12T15:00:00'))
+    expect(formatEmailTime('2026-07-01T10:00:00', 'dmy')).toBe('01/07/2026')
+    // today/yesterday wording is kept regardless of the format
+    expect(formatEmailTime('2026-07-11T10:00:00', 'dmy')).toBe('Yesterday')
+  })
+})
+
+describe('formatDate', () => {
+  const d = new Date(2026, 6, 5)
+  it('renders the explicit formats', () => {
+    expect(formatDate(d, 'dmy')).toBe('05/07/2026')
+    expect(formatDate(d, 'mdy')).toBe('07/05/2026')
+    expect(formatDate(d, 'ymd')).toBe('2026-07-05')
+  })
+  it('defaults to the system locale', () => {
+    expect(formatDate(d)).toBe(d.toLocaleDateString())
+  })
 })
 
 describe('relativeTime', () => {
@@ -70,15 +90,30 @@ describe('eventDateShort', () => {
     expect(eventDateShort('')).toBe('—')
     expect(eventDateShort(null)).toBe('—')
   })
-  it('parses ISO dates', () => {
-    expect(eventDateShort('2026-07-14')).toBe('JUL 14')
+  it('defaults to a short badge in the system locale', () => {
+    const expected = new Date(2026, 6, 14)
+      .toLocaleDateString([], { month: 'short', day: 'numeric' })
+      .toUpperCase()
+    expect(eventDateShort('2026-07-14')).toBe(expected)
+  })
+  it('honors an explicit date format', () => {
+    expect(eventDateShort('2026-07-14', undefined, 'dmy')).toBe('14/07/2026')
+    expect(eventDateShort('2026-07-14', undefined, 'mdy')).toBe('07/14/2026')
   })
   it('parses French dd/mm/yyyy as day/month (regression: was read as US mm/dd)', () => {
-    expect(eventDateShort('11/07/2026')).toBe('JUL 11')
-    expect(eventDateShort('01/12/2026')).toBe('DEC 1')
+    expect(eventDateShort('11/07/2026', undefined, 'ymd')).toBe('2026-07-11')
+    expect(eventDateShort('01/12/2026', undefined, 'ymd')).toBe('2026-12-01')
   })
   it('falls back to truncated raw text when unparseable', () => {
     expect(eventDateShort('vendredi soir')).toBe('VENDREDI')
+  })
+})
+
+describe('eventChipDate', () => {
+  it('formats resolvable dates and leaves free text as written', () => {
+    expect(eventChipDate('2026-07-15', undefined, 'dmy')).toBe('15/07/2026')
+    expect(eventChipDate('demain', '2026-07-14T09:00:00', 'dmy')).toBe('15/07/2026')
+    expect(eventChipDate('prochainement', '2026-07-14T09:00:00', 'dmy')).toBe('prochainement')
   })
 })
 

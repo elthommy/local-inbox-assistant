@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, streamChat } from './api.js'
-import { avatarColor, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime, upcomingEvents } from './utils.js'
+import { DATE_FORMATS, avatarColor, eventChipDate, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime, upcomingEvents } from './utils.js'
 
 const MONO = "'IBM Plex Mono', monospace"
 const SANS = "'IBM Plex Sans', system-ui, sans-serif"
@@ -267,7 +267,7 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
   )
 }
 
-function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo }) {
+function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, dateFormat }) {
   const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
   const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
   const suppressed = email.dismissed || email.muted
@@ -323,7 +323,7 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo }) {
             </span>
             <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', flex: 'none' }}>
               {email.muted ? '⊘ muted · ' : email.dismissed ? '✕ dismissed · ' : ''}
-              {formatEmailTime(email.date_utc)}
+              {formatEmailTime(email.date_utc, dateFormat)}
             </span>
           </div>
           <div
@@ -359,7 +359,7 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo }) {
             {(email.events || []).map((ev) => (
               <span key={`e${ev.id}`} style={{ fontFamily: MONO, fontSize: 10, background: '#132a24', color: '#4ADE80', padding: '3px 8px', borderRadius: 4 }}>
                 ◷ {ev.title}
-                {ev.date ? ` · ${ev.date}` : ''}
+                {ev.date ? ` · ${eventChipDate(ev.date, email.date_utc, dateFormat)}` : ''}
                 {ev.time ? ` ${ev.time}` : ''}
               </span>
             ))}
@@ -495,7 +495,7 @@ function TaskRow({ task, onToggle, onDismiss, onGoTo }) {
   )
 }
 
-function EventRow({ event, onDismiss, onGoTo }) {
+function EventRow({ event, onDismiss, onGoTo, dateFormat }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -511,7 +511,7 @@ function EventRow({ event, onDismiss, onGoTo }) {
           minWidth: 54,
         }}
       >
-        {eventDateShort(event.date, event.date_utc)}
+        {eventDateShort(event.date, event.date_utc, dateFormat)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, color: '#e2e5ea' }}>{event.title}</div>
@@ -605,7 +605,7 @@ function IndexingSettings({ tunables, onSave }) {
   )
 }
 
-function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute, tunables, onSaveSettings }) {
+function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute, tunables, onSaveSettings, dateFormat, onDateFormatChange }) {
   const [showMcp, setShowMcp] = useState(true)
   const sectionTitle = {
     fontFamily: MONO,
@@ -718,6 +718,40 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
             <div style={sectionTitle}>Indexing</div>
             <div style={card}>
               <IndexingSettings tunables={tunables} onSave={onSaveSettings} />
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>Display</div>
+            <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>date format</div>
+                <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280', marginTop: 1 }}>
+                  how dates appear in mail, tasks and events
+                </div>
+              </div>
+              <select
+                value={dateFormat}
+                aria-label="date format"
+                onChange={(e) => onDateFormatChange(e.target.value)}
+                style={{
+                  background: '#0e1116',
+                  border: '1px solid #262b33',
+                  color: '#e8eaed',
+                  fontFamily: MONO,
+                  fontSize: 12,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  flex: 'none',
+                }}
+              >
+                {DATE_FORMATS.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -841,6 +875,15 @@ export default function App() {
   const [model, setModel] = useState('ollama')
   const [useContext, setUseContext] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // display preference, per browser (not a backend tunable)
+  const [dateFormat, setDateFormat] = useState(() => {
+    const saved = localStorage.getItem('date_format')
+    return DATE_FORMATS.some((f) => f.id === saved) ? saved : 'system'
+  })
+  const changeDateFormat = (fmt) => {
+    setDateFormat(fmt)
+    localStorage.setItem('date_format', fmt)
+  }
   const [filter, setFilter] = useState('priority')
   const [expandedId, setExpandedId] = useState(null)
   const [pendingScrollId, setPendingScrollId] = useState(null)
@@ -1138,6 +1181,7 @@ export default function App() {
                   onDismiss={() => dismissEmail(e.id)}
                   onMute={() => muteSender(e.sender_email)}
                   onGoTo={filter === 'priority' ? () => goToEmail(e.id) : null}
+                  dateFormat={dateFormat}
                 />
               ))}
             {(filter === 'priority' || filter === 'all') && displayEmails.length === 0 && !loadError && (
@@ -1160,7 +1204,7 @@ export default function App() {
             )}
             {filter === 'events' &&
               upcoming.map((ev) => (
-                <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} onGoTo={() => goToEmail(ev.email_id)} />
+                <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} onGoTo={() => goToEmail(ev.email_id)} dateFormat={dateFormat} />
               ))}
             {filter === 'events' && upcoming.length === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
@@ -1182,6 +1226,8 @@ export default function App() {
         onUnmute={muteSender}
         tunables={tunables}
         onSaveSettings={saveSettings}
+        dateFormat={dateFormat}
+        onDateFormatChange={changeDateFormat}
       />
     </div>
   )
