@@ -9,6 +9,7 @@ vi.mock('../api.js', () => ({
     status: vi.fn(),
     stats: vi.fn(),
     emails: vi.fn(),
+    email: vi.fn(),
     tasks: vi.fn(),
     events: vi.fn(),
     mutedSenders: vi.fn(),
@@ -72,6 +73,7 @@ beforeEach(() => {
   api.status.mockResolvedValue(STATUS)
   api.stats.mockResolvedValue({ unread: 1, open_tasks: 1, events: 1, high_priority: 1 })
   api.emails.mockResolvedValue(EMAILS)
+  api.email.mockResolvedValue(EMAILS[0])
   api.tasks.mockResolvedValue(TASKS)
   api.events.mockResolvedValue(EVENTS)
   api.mutedSenders.mockResolvedValue([])
@@ -184,6 +186,37 @@ describe('App', () => {
     expect(api.emails).toHaveBeenLastCalledWith('all')
     // the email row is rendered expanded (snippet visible)
     expect(await screen.findByText(/one more pass/)).toBeInTheDocument()
+  })
+
+  it('pulls an email older than the all-mail window into the list when jumping to it', async () => {
+    const OLD_EMAIL = {
+      id: 2,
+      sender: 'Paradox',
+      sender_email: 'news@paradox.com',
+      subject: 'Stellaris news',
+      date_utc: '2026-07-01T10:00:00+00:00',
+      unread: false,
+      priority: 'low',
+      dismissed: false,
+      muted: false,
+      snippet: 'leaving Game Pass on July 15',
+      tasks: [],
+      events: [],
+    }
+    api.events.mockResolvedValue([
+      { id: 22, email_id: 2, title: 'Stellaris leaving Game Pass', date: '2026-07-15', time: '', source: 'Paradox', date_utc: '2026-07-01' },
+    ])
+    api.email.mockResolvedValue(OLD_EMAIL)
+    render(<App />)
+    await userEvent.click(await screen.findByText('events (1)'))
+    await screen.findByText('Stellaris leaving Game Pass')
+    await userEvent.click(screen.getByTitle('Show source email in all mail'))
+    expect(api.email).toHaveBeenCalledWith(2)
+    // rendered expanded, spliced in below the newer email from the window
+    expect(await screen.findByText('Stellaris news')).toBeInTheDocument()
+    expect(screen.getByText(/leaving Game Pass on July 15/)).toBeInTheDocument()
+    const subjects = screen.getAllByText(/Q3 report — review needed|Stellaris news/).map((n) => n.textContent)
+    expect(subjects).toEqual(['Q3 report — review needed', 'Stellaris news'])
   })
 
   it('offers "show in all mail" on priority emails', async () => {

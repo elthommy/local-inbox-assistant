@@ -20,6 +20,7 @@ export const api = {
   status: () => getJSON('/status'),
   stats: () => getJSON('/stats'),
   emails: (filter) => getJSON(`/emails?filter=${filter}`),
+  email: (id) => getJSON(`/emails/${id}`),
   tasks: () => getJSON('/tasks'),
   events: () => getJSON('/events'),
   toggleTask: (id) => postJSON(`/tasks/${id}/toggle`),

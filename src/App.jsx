@@ -849,16 +849,22 @@ export default function App() {
   const [messages, setMessages] = useState([])
   const [loadError, setLoadError] = useState(null)
   const indexingRef = useRef(false)
+  // email pulled in on demand by "go to mail" when it's older than the
+  // newest-100 window the all-mail tab loads; merged into the list at render
+  const [jumpedEmail, setJumpedEmail] = useState(null)
+  const jumpedIdRef = useRef(null)
 
   const refreshData = useCallback(async () => {
     try {
-      const [st, em, tk, ev, ms, tu] = await Promise.all([
+      const jumpedId = jumpedIdRef.current
+      const [st, em, tk, ev, ms, tu, je] = await Promise.all([
         api.stats(),
         api.emails(filter),
         api.tasks(),
         api.events(),
         api.mutedSenders(),
         api.settings(),
+        jumpedId ? api.email(jumpedId).catch(() => null) : null,
       ])
       setStats(st)
       setEmails(em)
@@ -866,6 +872,7 @@ export default function App() {
       setEvents(ev)
       setMutedSenders(ms)
       setTunables(tu)
+      setJumpedEmail(je)
       setLoadError(null)
     } catch (e) {
       setLoadError(String(e.message || e))
@@ -956,11 +963,31 @@ export default function App() {
 
   // jump to an email in "all mail": switch tab, expand it, scroll it into
   // view once the list for the new filter has rendered
-  const goToEmail = (emailId) => {
+  const goToEmail = async (emailId) => {
     setExpandedId(emailId)
     setPendingScrollId(emailId)
     setFilter('all')
+    if (!emails.some((e) => e.id === emailId)) {
+      jumpedIdRef.current = emailId
+      try {
+        setJumpedEmail(await api.email(emailId))
+      } catch {
+        setPendingScrollId(null) // email gone from DB; the row will never render
+      }
+    }
   }
+
+  // all-mail list with the jumped-to email spliced in at its date-sorted
+  // position when the newest-100 window doesn't include it
+  const displayEmails = useMemo(() => {
+    if (filter !== 'all' || !jumpedEmail || emails.some((e) => e.id === jumpedEmail.id)) {
+      return emails
+    }
+    const idx = emails.findIndex((e) => e.date_utc < jumpedEmail.date_utc)
+    const merged = [...emails]
+    merged.splice(idx === -1 ? merged.length : idx, 0, jumpedEmail)
+    return merged
+  }, [emails, jumpedEmail, filter])
 
   useEffect(() => {
     if (pendingScrollId === null) return
@@ -969,7 +996,7 @@ export default function App() {
       if (typeof el.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' })
       setPendingScrollId(null)
     }
-  }, [pendingScrollId, emails])
+  }, [pendingScrollId, displayEmails])
 
   // both change what several tabs and counters show → refetch everything
   const dismissEmail = async (id) => {
@@ -1102,7 +1129,7 @@ export default function App() {
               </div>
             )}
             {(filter === 'priority' || filter === 'all') &&
-              emails.map((e) => (
+              displayEmails.map((e) => (
                 <EmailRow
                   key={e.id}
                   email={e}
@@ -1113,7 +1140,7 @@ export default function App() {
                   onGoTo={filter === 'priority' ? () => goToEmail(e.id) : null}
                 />
               ))}
-            {(filter === 'priority' || filter === 'all') && emails.length === 0 && !loadError && (
+            {(filter === 'priority' || filter === 'all') && displayEmails.length === 0 && !loadError && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
                 {filter === 'priority' ? 'no high-priority mail (yet — extraction may still be running)' : 'no mail indexed yet'}
               </div>
