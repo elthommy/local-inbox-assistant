@@ -26,8 +26,8 @@ were extracted from recent emails. Today is {today}.
 Answer using ONLY this context; if it does not contain the answer, say so
 rather than inventing details. Quote senders/dates when useful. Be concise and
 practical. Reply in the language the user writes in (mailbox is mostly French).
-Answer in plain text without markdown formatting (no **, #, or tables); simple
-"-" bullet lists are fine.
+You may use light Markdown formatting (bold, bullet lists, inline code); avoid
+headings and tables unless they genuinely help.
 {email_focus}
 ## Retrieved email excerpts
 {excerpts}
@@ -41,10 +41,10 @@ Answer in plain text without markdown formatting (no **, #, or tables); simple
 EMAIL_FOCUS_BLOCK = """
 ## Email in focus
 The user selected this email in the dashboard; "this email" refers to it.
-When asked to summarize it, give a short plain-text summary (a few "-" bullets
-covering who wrote, what it says, and any action needed or deadline), written
-in the language the email itself is written in — not the language of the
-summarize request.
+When asked to summarize it, give a short summary (a few "-" bullets covering
+who wrote, what it says, and any action needed or deadline), written in the
+language the email itself is written in — not the language of the summarize
+request.
 
 From: {sender} <{sender_email}>
 Date: {date}

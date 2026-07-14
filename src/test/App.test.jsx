@@ -347,6 +347,22 @@ describe('App', () => {
     expect(screen.getByText(/^qwen3\.6 · \d/)).toBeInTheDocument()
   })
 
+  it('renders assistant markdown as HTML, user text as plain text', async () => {
+    streamChat.mockImplementation(async (_opts, onToken) => {
+      onToken('**Urgent**: reply to Sarah\n\n- `Q3.pdf`\n- meeting')
+    })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.type(screen.getByPlaceholderText('Ask about your inbox…'), 'what is *urgent*?')
+    await userEvent.click(screen.getByText('send'))
+    const bold = await screen.findByText('Urgent')
+    expect(bold.tagName).toBe('STRONG')
+    expect(screen.getByText('Q3.pdf').tagName).toBe('CODE')
+    expect(screen.getByRole('list')).toBeInTheDocument()
+    // the user message is NOT parsed as markdown: the * stay literal
+    expect(screen.getByText('what is *urgent*?')).toBeInTheDocument()
+  })
+
   it('summarizes an email into the chat panel and pins it for follow-ups', async () => {
     const calls = []
     streamChat.mockImplementation(async ({ messages, emailId }, onToken) => {

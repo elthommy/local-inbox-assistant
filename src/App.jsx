@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { api, streamChat } from './api.js'
 import { DATE_FORMATS, avatarColor, eventChipDate, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime, upcomingEvents } from './utils.js'
 
@@ -187,6 +189,7 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
                 {isUser ? 'you' : m.model} · {m.time}
               </span>
               <div
+                className={isUser ? undefined : 'chat-md'}
                 style={{
                   maxWidth: '88%',
                   background: isUser ? '#16324a' : '#161a20',
@@ -196,10 +199,10 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
                   borderRadius: 10,
                   fontSize: 13.5,
                   lineHeight: 1.55,
-                  whiteSpace: 'pre-wrap',
+                  whiteSpace: isUser ? 'pre-wrap' : 'normal',
                 }}
               >
-                {m.text}
+                {isUser ? m.text : <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>}
               </div>
             </div>
           )
