@@ -21,6 +21,9 @@ the UI shows it as "coming soon".
     `list_tasks`, `list_events`)
 - **`src/`** — React + Vite frontend (two-pane dashboard: chat + inbox)
 
+Diagrams of the indexing pipeline and the chat/RAG flow are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## Requirements
 
 - [Ollama](https://ollama.com) running locally with:
