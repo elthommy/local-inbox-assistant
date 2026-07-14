@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, streamChat } from './api.js'
-import { avatarColor, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime } from './utils.js'
+import { avatarColor, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime, upcomingEvents } from './utils.js'
 
 const MONO = "'IBM Plex Mono', monospace"
 const SANS = "'IBM Plex Sans', system-ui, sans-serif"
@@ -511,7 +511,7 @@ function EventRow({ event, onDismiss, onGoTo }) {
           minWidth: 54,
         }}
       >
-        {eventDateShort(event.date)}
+        {eventDateShort(event.date, event.date_utc)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, color: '#e2e5ea' }}>{event.title}</div>
@@ -1011,6 +1011,7 @@ export default function App() {
   }
 
   const openTasks = tasks.filter((t) => !t.done)
+  const upcoming = useMemo(() => upcomingEvents(events), [events])
   const statTiles = [
     { label: 'unread', value: stats?.unread ?? '–', color: '#e8eaed' },
     { label: 'open tasks', value: stats?.open_tasks ?? '–', color: '#FBBF24' },
@@ -1022,7 +1023,7 @@ export default function App() {
     { id: 'priority', label: `priority (${stats?.high_priority ?? 0})` },
     { id: 'all', label: `all mail (${indexedCount})` },
     { id: 'tasks', label: `tasks (${openTasks.length})` },
-    { id: 'events', label: `events (${events.length})` },
+    { id: 'events', label: `events (${upcoming.length})` },
   ]
 
   return (
@@ -1131,11 +1132,13 @@ export default function App() {
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no tasks extracted yet</div>
             )}
             {filter === 'events' &&
-              events.map((ev) => (
+              upcoming.map((ev) => (
                 <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} onGoTo={() => goToEmail(ev.email_id)} />
               ))}
-            {filter === 'events' && events.length === 0 && (
-              <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no events extracted yet</div>
+            {filter === 'events' && upcoming.length === 0 && (
+              <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
+                {events.length ? 'no upcoming events' : 'no events extracted yet'}
+              </div>
             )}
           </div>
         </div>
