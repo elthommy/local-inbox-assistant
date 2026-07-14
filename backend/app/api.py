@@ -92,6 +92,11 @@ async def status():
 
 @router.get("/stats")
 def stats():
+    """Counts the UI can't derive from the lists it already fetches.
+
+    Task and event tile counts are computed client-side from /tasks and
+    /events so they always match the tab counts.
+    """
     with get_conn() as conn:
         unread = conn.execute(
             "SELECT COUNT(*) c FROM emails WHERE unread = 1"
@@ -100,18 +105,8 @@ def stats():
             f"SELECT COUNT(*) c FROM emails e WHERE e.priority = 'high' "
             f"AND {triage_filter()} AND {NOT_HANDLED}"
         ).fetchone()["c"]
-        open_tasks = conn.execute(
-            f"SELECT COUNT(*) c FROM tasks t JOIN emails e ON e.id = t.email_id "
-            f"WHERE t.done = 0 AND {triage_filter()}"
-        ).fetchone()["c"]
-        events = conn.execute(
-            f"SELECT COUNT(*) c FROM events ev JOIN emails e ON e.id = ev.email_id "
-            f"WHERE {triage_filter()}"
-        ).fetchone()["c"]
     return {
         "unread": unread,
-        "open_tasks": open_tasks,
-        "events": events,
         "high_priority": high,
     }
 

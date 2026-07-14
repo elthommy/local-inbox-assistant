@@ -1142,10 +1142,14 @@ export default function App() {
 
   const openTasks = tasks.filter((t) => !t.done)
   const upcoming = useMemo(() => upcomingEvents(events), [events])
+  // tasks/events tiles count the same client-side lists as the tabs below,
+  // so the two can never disagree; stats is only the source for counts the
+  // UI doesn't hold (unread, high priority). `stats` doubles as the
+  // "first load done" flag: refreshData sets it together with tasks/events.
   const statTiles = [
     { label: 'unread', value: stats?.unread ?? '–', color: '#e8eaed' },
-    { label: 'open tasks', value: stats?.open_tasks ?? '–', color: '#FBBF24' },
-    { label: 'upcoming events', value: stats?.events ?? '–', color: '#4ADE80' },
+    { label: 'open tasks', value: stats ? openTasks.length : '–', color: '#FBBF24' },
+    { label: 'upcoming events', value: stats ? upcoming.length : '–', color: '#4ADE80' },
     { label: 'high priority', value: stats?.high_priority ?? '–', color: '#F87171' },
   ]
 

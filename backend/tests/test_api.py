@@ -76,8 +76,6 @@ class TestStatsAndLists:
         seed(client)
         assert client.get("/api/stats").json() == {
             "unread": 1,
-            "open_tasks": 1,
-            "events": 1,
             "high_priority": 1,
         }
 
@@ -182,8 +180,7 @@ class TestDismiss:
         assert client.get("/api/emails?filter=priority").json() == []
         assert client.get("/api/tasks").json() == []
         assert client.get("/api/events").json() == []
-        stats = client.get("/api/stats").json()
-        assert (stats["high_priority"], stats["open_tasks"], stats["events"]) == (0, 0, 0)
+        assert client.get("/api/stats").json()["high_priority"] == 0
         all_mail = client.get("/api/emails?filter=all").json()
         flags = {e["subject"]: e["dismissed"] for e in all_mail}
         assert flags == {"Q3 report": True, "digest": False}

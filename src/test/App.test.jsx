@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   api.status.mockResolvedValue(STATUS)
-  api.stats.mockResolvedValue({ unread: 1, open_tasks: 1, events: 1, high_priority: 1 })
+  api.stats.mockResolvedValue({ unread: 1, high_priority: 1 })
   api.emails.mockResolvedValue(EMAILS)
   api.email.mockResolvedValue(EMAILS[0])
   api.tasks.mockResolvedValue(TASKS)
@@ -241,6 +241,19 @@ describe('App', () => {
       .find((d) => d.style.width === '18px')
     await userEvent.click(checkbox)
     expect(api.toggleTask).toHaveBeenCalledWith(11)
+  })
+
+  it('keeps the open-tasks tile in sync with the tasks tab when toggling', async () => {
+    render(<App />)
+    const tile = (await screen.findByText('open tasks')).parentElement
+    expect(tile).toHaveTextContent('1')
+    await userEvent.click(screen.getByText('tasks (1)'))
+    const row = (await screen.findByText('Review Q3 report')).closest('div').parentElement
+    const checkbox = within(row.parentElement).getAllByText('', { selector: 'div' })
+      .find((d) => d.style.width === '18px')
+    await userEvent.click(checkbox)
+    expect(tile).toHaveTextContent('0')
+    expect(screen.getByText('tasks (0)')).toBeInTheDocument()
   })
 
   it('shows events with formatted date chip', async () => {
