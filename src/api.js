@@ -36,11 +36,11 @@ export const api = {
  * Stream a chat response over SSE.
  * Calls onToken(text) per chunk; resolves when done; throws on error events.
  */
-export async function streamChat({ messages, model, useContext }, onToken) {
+export async function streamChat({ messages, model, useContext, emailId }, onToken) {
   const res = await fetch(`${BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, model, use_context: useContext }),
+    body: JSON.stringify({ messages, model, use_context: useContext, email_id: emailId ?? null }),
   })
   if (!res.ok || !res.body) throw new Error(`chat: HTTP ${res.status}`)
 

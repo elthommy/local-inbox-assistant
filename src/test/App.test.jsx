@@ -334,6 +334,34 @@ describe('App', () => {
     expect(screen.getByText(/^qwen3\.6 · \d/)).toBeInTheDocument()
   })
 
+  it('summarizes an email into the chat panel and pins it for follow-ups', async () => {
+    const calls = []
+    streamChat.mockImplementation(async ({ messages, emailId }, onToken) => {
+      calls.push({ last: messages.at(-1), emailId })
+      onToken('Résumé du mail.')
+    })
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    // summarize is offered in the all-mail tab only
+    expect(screen.queryByText('≡ summarize')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByText('all mail (2106)'))
+    await userEvent.click(await screen.findByText('≡ summarize'))
+    expect(calls[0].emailId).toBe(1)
+    expect(calls[0].last).toEqual({
+      role: 'user',
+      content: 'Summarize this email from Sarah Chen: "Q3 report — review needed"',
+    })
+    expect(await screen.findByText('Résumé du mail.')).toBeInTheDocument()
+    // the pinned email shows as a chip and sticks for follow-up questions
+    expect(screen.getByText('✉ in context:')).toBeInTheDocument()
+    await userEvent.type(screen.getByPlaceholderText('Ask about your inbox…'), 'who sent it?')
+    await userEvent.click(screen.getByText('send'))
+    expect(calls[1]).toMatchObject({ emailId: 1, last: { content: 'who sent it?' } })
+    // the ✕ on the chip unpins the email
+    await userEvent.click(screen.getByTitle('Drop this email from the chat context'))
+    expect(screen.queryByText('✉ in context:')).not.toBeInTheDocument()
+  })
+
   it('renders a chat error bubble when the stream fails', async () => {
     streamChat.mockRejectedValue(new Error('backend exploded'))
     render(<App />)

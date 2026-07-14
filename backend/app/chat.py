@@ -28,7 +28,7 @@ rather than inventing details. Quote senders/dates when useful. Be concise and
 practical. Reply in the language the user writes in (mailbox is mostly French).
 Answer in plain text without markdown formatting (no **, #, or tables); simple
 "-" bullet lists are fine.
-
+{email_focus}
 ## Retrieved email excerpts
 {excerpts}
 
@@ -37,6 +37,24 @@ Answer in plain text without markdown formatting (no **, #, or tables); simple
 
 ## Upcoming events
 {events}"""
+
+EMAIL_FOCUS_BLOCK = """
+## Email in focus
+The user selected this email in the dashboard; "this email" refers to it.
+When asked to summarize it, give a short plain-text summary (a few "-" bullets
+covering who wrote, what it says, and any action needed or deadline), written
+in the language the email itself is written in — not the language of the
+summarize request.
+
+From: {sender} <{sender_email}>
+Date: {date}
+Subject: {subject}
+
+{body}
+"""
+
+# keep the pinned email within a modest share of the model's context window
+FOCUS_BODY_MAX_CHARS = 8000
 
 
 def _format_context_blocks() -> tuple[str, str]:
@@ -64,24 +82,56 @@ def _format_context_blocks() -> tuple[str, str]:
     return "\n".join(task_lines), "\n".join(event_lines)
 
 
+def _format_email_focus(email_id: int) -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT sender, sender_email, subject, date_utc, body, snippet "
+            "FROM emails WHERE id = ?",
+            (email_id,),
+        ).fetchone()
+    if row is None:
+        return ""
+    body = (row["body"] or row["snippet"] or "").strip()
+    if len(body) > FOCUS_BODY_MAX_CHARS:
+        body = body[:FOCUS_BODY_MAX_CHARS] + "\n[… truncated …]"
+    return EMAIL_FOCUS_BLOCK.format(
+        sender=row["sender"] or "?",
+        sender_email=row["sender_email"] or "?",
+        date=row["date_utc"] or "?",
+        subject=row["subject"] or "(no subject)",
+        body=body or "(empty body)",
+    )
+
+
 async def build_messages(
-    ollama: OllamaClient, history: list[dict], use_context: bool
+    ollama: OllamaClient,
+    history: list[dict],
+    use_context: bool,
+    email_id: int | None = None,
 ) -> list[dict]:
     """history: [{"role": "user"|"assistant", "content": str}], last item is
-    the new user message."""
-    if not use_context:
+    the new user message. email_id pins one email's full text into the
+    context (the "summarize" button), even when inbox context is off — the
+    user explicitly picked that email."""
+    email_focus = _format_email_focus(email_id) if email_id is not None else ""
+    if not use_context and not email_focus:
         system = SYSTEM_NO_CONTEXT
     else:
-        query = history[-1]["content"]
-        hits = await rag.search_emails(ollama, query, settings.rag_top_k)
-        excerpts = (
-            "\n\n---\n\n".join(h["text"][:1500] for h in hits)
-            if hits
-            else "(no relevant emails found)"
-        )
-        tasks_block, events_block = _format_context_blocks()
+        if use_context:
+            query = history[-1]["content"]
+            hits = await rag.search_emails(ollama, query, settings.rag_top_k)
+            excerpts = (
+                "\n\n---\n\n".join(h["text"][:1500] for h in hits)
+                if hits
+                else "(no relevant emails found)"
+            )
+            tasks_block, events_block = _format_context_blocks()
+        else:
+            excerpts = "(inbox context is off — only the email in focus is visible)"
+            tasks_block = events_block = "(inbox context is off)"
         system = SYSTEM_WITH_CONTEXT.format(
             today=datetime.now().strftime("%A %d %B %Y"),
+            email_focus=email_focus,
             excerpts=excerpts,
             tasks=tasks_block,
             events=events_block,
@@ -90,9 +140,9 @@ async def build_messages(
 
 
 async def stream_answer(
-    history: list[dict], use_context: bool
+    history: list[dict], use_context: bool, email_id: int | None = None
 ) -> AsyncIterator[str]:
     ollama = OllamaClient()
-    messages = await build_messages(ollama, history, use_context)
+    messages = await build_messages(ollama, history, use_context, email_id)
     async for chunk in ollama.chat_stream(messages):
         yield chunk

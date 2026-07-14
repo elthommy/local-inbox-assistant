@@ -117,7 +117,15 @@ describe('streamChat', () => {
       messages: [{ role: 'user', content: 'hi' }],
       model: 'ollama',
       use_context: false,
+      email_id: null,
     })
+  })
+
+  it('includes the pinned email id when one is given', async () => {
+    const fetchMock = vi.fn(() => sseResponse(['event: done\ndata: {}\n\n']))
+    vi.stubGlobal('fetch', fetchMock)
+    await streamChat({ messages: [], useContext: true, emailId: 42 }, () => {})
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).email_id).toBe(42)
   })
 
   it('throws on HTTP failure', async () => {

@@ -79,6 +79,69 @@ async def test_history_truncated_to_last_12(monkeypatch):
     assert msgs[-1]["content"] == "m29"
 
 
+def set_body(email_id, body):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE emails SET body = ?, sender_email = 'sarah@x.com' WHERE id = ?",
+            (body, email_id),
+        )
+
+
+async def test_email_focus_pinned_with_context(monkeypatch):
+    eid = seed_email_with_task_and_event()
+    set_body(eid, "FULL-BODY-TEXT")
+
+    async def fake_search(*a, **kw):
+        return []
+
+    monkeypatch.setattr(rag, "search_emails", fake_search)
+    msgs = await chat.build_messages(
+        OllamaClient(),
+        [{"role": "user", "content": "summarize"}],
+        use_context=True,
+        email_id=eid,
+    )
+    system = msgs[0]["content"]
+    assert "## Email in focus" in system
+    assert "FULL-BODY-TEXT" in system
+    assert "sarah@x.com" in system
+    assert "## Retrieved email excerpts" in system  # RAG context still present
+
+
+async def test_email_focus_overrides_context_off():
+    eid = seed_email_with_task_and_event()
+    set_body(eid, "FULL-BODY-TEXT")
+    # no rag monkeypatch needed: with use_context off no search must happen
+    msgs = await chat.build_messages(
+        OllamaClient(),
+        [{"role": "user", "content": "summarize"}],
+        use_context=False,
+        email_id=eid,
+    )
+    system = msgs[0]["content"]
+    assert "FULL-BODY-TEXT" in system
+    assert "inbox context is off" in system
+    assert "DISABLED" not in system
+
+
+async def test_email_focus_long_body_truncated(monkeypatch):
+    eid = seed_email_with_task_and_event()
+    set_body(eid, "x" * (chat.FOCUS_BODY_MAX_CHARS + 500))
+    msgs = await chat.build_messages(
+        OllamaClient(), [{"role": "user", "content": "q"}], use_context=False, email_id=eid
+    )
+    system = msgs[0]["content"]
+    assert "[… truncated …]" in system
+    assert "x" * (chat.FOCUS_BODY_MAX_CHARS + 500) not in system
+
+
+async def test_email_focus_unknown_id_falls_back_to_no_context():
+    msgs = await chat.build_messages(
+        OllamaClient(), [{"role": "user", "content": "q"}], use_context=False, email_id=999999
+    )
+    assert "DISABLED" in msgs[0]["content"]
+
+
 async def test_stream_answer_yields_model_chunks(monkeypatch):
     async def fake_stream(self, messages):
         assert messages[0]["role"] == "system"

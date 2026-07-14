@@ -92,7 +92,7 @@ function Header({ ollamaUp, onOpenSettings }) {
   )
 }
 
-function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend }) {
+function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
   const scrollRef = useRef(null)
   useEffect(() => {
     const el = scrollRef.current
@@ -224,6 +224,33 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
         )}
       </div>
 
+      {focusEmail && (
+        <div
+          style={{
+            flex: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '7px 16px',
+            borderTop: '1px solid #1c2027',
+            background: '#0e1116',
+            fontFamily: MONO,
+            fontSize: 11,
+            color: '#7dd3fc',
+            minWidth: 0,
+          }}
+        >
+          <span style={{ flex: 'none', color: '#6b7280' }}>✉ in context:</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{focusEmail.subject}</span>
+          <button
+            onClick={onClearFocus}
+            title="Drop this email from the chat context"
+            style={{ background: 'none', border: 'none', color: '#6b7280', fontFamily: MONO, fontSize: 12, cursor: 'pointer', flex: 'none', padding: '0 2px' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
       <div style={{ flex: 'none', display: 'flex', gap: 8, padding: '14px 16px', borderTop: '1px solid #1c2027', background: '#0e1116' }}>
         <input
           type="text"
@@ -267,7 +294,7 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
   )
 }
 
-function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, dateFormat }) {
+function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, onSummarize, dateFormat }) {
   const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
   const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
   const suppressed = email.dismissed || email.muted
@@ -375,6 +402,18 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, dateFo
                 title="Show this email in the all mail tab"
               >
                 ✉ show in all mail
+              </button>
+            )}
+            {onSummarize && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSummarize()
+                }}
+                style={actionBtn}
+                title="Summarize this email in the chat panel (keeps it in context for follow-up questions)"
+              >
+                ≡ summarize
               </button>
             )}
             <button
@@ -890,6 +929,9 @@ export default function App() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [messages, setMessages] = useState([])
+  // email pinned into the chat context by "summarize" ({id, subject}); stays
+  // pinned for follow-up questions until cleared or replaced
+  const [focusEmail, setFocusEmail] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const indexingRef = useRef(false)
   // email pulled in on demand by "go to mail" when it's older than the
@@ -954,13 +996,11 @@ export default function App() {
   const chatModel = status?.ollama?.chat_model || 'ollama'
   const indexedCount = status?.index?.emails ?? 0
 
-  const sendMessage = async () => {
-    const text = input.trim()
-    if (!text || isTyping) return
-    const userMsg = { id: Date.now(), role: 'user', text, time: nowTime() }
+  // shared by the chat input and the per-email "summarize" button: append the
+  // user message and stream the assistant reply, optionally pinning an email
+  const runChatTurn = async (userMsg, emailId) => {
     const history = [...messages, userMsg]
     setMessages(history)
-    setInput('')
     setIsTyping(true)
 
     const assistantId = Date.now() + 1
@@ -971,6 +1011,7 @@ export default function App() {
           messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text })),
           model,
           useContext,
+          emailId,
         },
         (token) => {
           if (!started) {
@@ -992,6 +1033,25 @@ export default function App() {
     } finally {
       setIsTyping(false)
     }
+  }
+
+  const sendMessage = () => {
+    const text = input.trim()
+    if (!text || isTyping) return
+    setInput('')
+    runChatTurn({ id: Date.now(), role: 'user', text, time: nowTime() }, focusEmail?.id)
+  }
+
+  // "summarize" on an email: ask in the chat panel with the full email pinned
+  // into the context, and keep it pinned so follow-up questions work
+  const summarizeEmail = (email) => {
+    if (isTyping) return
+    const subject = email.subject || '(no subject)'
+    setFocusEmail({ id: email.id, subject })
+    runChatTurn(
+      { id: Date.now(), role: 'user', text: `Summarize this email from ${email.sender}: "${subject}"`, time: nowTime() },
+      email.id,
+    )
   }
 
   const toggleTask = async (id) => {
@@ -1125,6 +1185,8 @@ export default function App() {
           input={input}
           onInputChange={(e) => setInput(e.target.value)}
           onSend={sendMessage}
+          focusEmail={focusEmail}
+          onClearFocus={() => setFocusEmail(null)}
         />
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
@@ -1181,6 +1243,7 @@ export default function App() {
                   onDismiss={() => dismissEmail(e.id)}
                   onMute={() => muteSender(e.sender_email)}
                   onGoTo={filter === 'priority' ? () => goToEmail(e.id) : null}
+                  onSummarize={filter === 'all' ? () => summarizeEmail(e) : null}
                   dateFormat={dateFormat}
                 />
               ))}

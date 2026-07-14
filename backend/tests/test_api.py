@@ -302,8 +302,9 @@ class TestChat:
         assert "not implemented yet" in r.text
 
     def test_streams_tokens_then_done(self, client, monkeypatch):
-        async def fake_answer(history, use_context):
+        async def fake_answer(history, use_context, email_id=None):
             assert use_context is True
+            assert email_id is None
             yield "Hello "
             yield "you"
 
@@ -321,8 +322,23 @@ class TestChat:
         assert 'data: {"token": "you"}' in r.text
         assert "event: done" in r.text
 
+    def test_email_id_forwarded_to_stream_answer(self, client, monkeypatch):
+        seen = {}
+
+        async def fake_answer(history, use_context, email_id=None):
+            seen["email_id"] = email_id
+            yield "ok"
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "email_id": 7},
+        )
+        assert "event: done" in r.text
+        assert seen["email_id"] == 7
+
     def test_stream_failure_emits_error_event(self, client, monkeypatch):
-        async def broken(history, use_context):
+        async def broken(history, use_context, email_id=None):
             yield "partial"
             raise RuntimeError("ollama died")
 

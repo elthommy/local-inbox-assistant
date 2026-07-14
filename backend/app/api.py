@@ -271,6 +271,8 @@ class ChatRequest(BaseModel):
     messages: list[dict]  # [{role, content}], last one is the new user message
     model: str = "ollama"
     use_context: bool = True
+    # pins this email's full text into the chat context ("summarize" button)
+    email_id: int | None = None
 
 
 @router.post("/chat")
@@ -283,7 +285,7 @@ async def chat(req: ChatRequest):
             yield f"event: error\ndata: {json.dumps({'message': NOT_CONFIGURED_MESSAGE})}\n\n"
             return
         try:
-            async for chunk in stream_answer(req.messages, req.use_context):
+            async for chunk in stream_answer(req.messages, req.use_context, req.email_id):
                 yield f"data: {json.dumps({'token': chunk})}\n\n"
             yield "event: done\ndata: {}\n\n"
         except Exception as exc:
