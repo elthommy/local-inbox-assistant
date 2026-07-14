@@ -42,7 +42,9 @@ async def test_context_includes_excerpts_tasks_events(monkeypatch):
 
     monkeypatch.setattr(rag, "search_emails", fake_search)
     msgs = await chat.build_messages(
-        OllamaClient(), [{"role": "user", "content": "what is urgent?"}], use_context=True
+        OllamaClient(),
+        [{"role": "user", "content": "what is urgent?"}],
+        use_context=True,
     )
     system = msgs[0]["content"]
     assert "EXCERPT-ONE" in system
@@ -128,7 +130,10 @@ async def test_email_focus_long_body_truncated(monkeypatch):
     eid = seed_email_with_task_and_event()
     set_body(eid, "x" * (chat.FOCUS_BODY_MAX_CHARS + 500))
     msgs = await chat.build_messages(
-        OllamaClient(), [{"role": "user", "content": "q"}], use_context=False, email_id=eid
+        OllamaClient(),
+        [{"role": "user", "content": "q"}],
+        use_context=False,
+        email_id=eid,
     )
     system = msgs[0]["content"]
     assert "[… truncated …]" in system
@@ -137,7 +142,10 @@ async def test_email_focus_long_body_truncated(monkeypatch):
 
 async def test_email_focus_unknown_id_falls_back_to_no_context():
     msgs = await chat.build_messages(
-        OllamaClient(), [{"role": "user", "content": "q"}], use_context=False, email_id=999999
+        OllamaClient(),
+        [{"role": "user", "content": "q"}],
+        use_context=False,
+        email_id=999999,
     )
     assert "DISABLED" in msgs[0]["content"]
 
@@ -149,5 +157,7 @@ async def test_stream_answer_yields_model_chunks(monkeypatch):
         yield "world"
 
     monkeypatch.setattr(OllamaClient, "chat_stream", fake_stream)
-    out = [c async for c in chat.stream_answer([{"role": "user", "content": "hi"}], False)]
+    out = [
+        c async for c in chat.stream_answer([{"role": "user", "content": "hi"}], False)
+    ]
     assert out == ["Hello ", "world"]

@@ -24,6 +24,7 @@ _NL_RE = re.compile(r"\n{3,}")
 
 
 def _clean_text(text: str) -> str:
+    """Collapse runs of whitespace and blank lines, trim each line."""
     text = _WS_RE.sub(" ", text)
     text = "\n".join(line.strip() for line in text.split("\n"))
     text = _NL_RE.sub("\n\n", text)
@@ -31,6 +32,7 @@ def _clean_text(text: str) -> str:
 
 
 def _html_to_text(html: str) -> str:
+    """Extract visible text from an HTML body (scripts/styles dropped)."""
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "head"]):
         tag.decompose()
@@ -38,6 +40,7 @@ def _html_to_text(html: str) -> str:
 
 
 def _best_body(msg: email.message.EmailMessage) -> str:
+    """Best-effort text body: text/plain part first, then converted HTML."""
     plain = msg.get_body(preferencelist=("plain",))
     if plain is not None:
         try:
@@ -54,6 +57,7 @@ def _best_body(msg: email.message.EmailMessage) -> str:
 
 
 def _parse_unread(msg: email.message.EmailMessage, path: Path) -> bool:
+    """Unread state from X-Mozilla-Status, falling back to maildir filename flags."""
     status = msg.get("X-Mozilla-Status")
     if status:
         try:

@@ -11,15 +11,15 @@ _client: chromadb.ClientAPI | None = None
 
 
 def get_collection() -> chromadb.Collection:
+    """Return the persistent "emails" collection, creating client/collection lazily."""
     global _client
     if _client is None:
         _client = chromadb.PersistentClient(path=str(settings.chroma_path))
-    return _client.get_or_create_collection(
-        "emails", metadata={"hnsw:space": "cosine"}
-    )
+    return _client.get_or_create_collection("emails", metadata={"hnsw:space": "cosine"})
 
 
 def chunk_text(text: str) -> list[str]:
+    """Split text into overlapping chunks, preferring paragraph/sentence breaks."""
     size, overlap = settings.chunk_size, settings.chunk_overlap
     if len(text) <= size:
         return [text] if text.strip() else []
@@ -79,11 +79,15 @@ async def index_emails(ollama: OllamaClient, email_rows: list[dict]) -> int:
     batch = 32
     for i in range(0, len(all_docs), batch):
         embeddings += await ollama.embed(all_docs[i : i + batch])
-    coll.upsert(ids=all_ids, documents=all_docs, embeddings=embeddings, metadatas=all_metas)
+    coll.upsert(
+        ids=all_ids, documents=all_docs, embeddings=embeddings, metadatas=all_metas
+    )
     return len(all_docs)
 
 
-async def search(ollama: OllamaClient, query: str, top_k: int | None = None) -> list[dict]:
+async def search(
+    ollama: OllamaClient, query: str, top_k: int | None = None
+) -> list[dict]:
     """Return the best-matching chunks: [{email_id, text, distance}]."""
     coll = get_collection()
     if coll.count() == 0:
@@ -114,7 +118,8 @@ async def search_emails(
     grouped: dict[int, dict] = {}
     for h in hits:  # hits are ordered best-first
         g = grouped.setdefault(
-            h["email_id"], {"email_id": h["email_id"], "chunks": [], "distance": h["distance"]}
+            h["email_id"],
+            {"email_id": h["email_id"], "chunks": [], "distance": h["distance"]},
         )
         if len(g["chunks"]) < chunks_per_email:
             g["chunks"].append(h["text"])
@@ -131,9 +136,11 @@ async def search_emails(
 
 
 def chunk_count() -> int:
+    """Return the total number of chunks stored in the collection."""
     return get_collection().count()
 
 
 def delete_emails(email_ids: list[int]) -> None:
+    """Remove every stored chunk belonging to the given emails."""
     if email_ids:
         get_collection().delete(where={"email_id": {"$in": email_ids}})

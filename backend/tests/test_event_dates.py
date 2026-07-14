@@ -72,7 +72,10 @@ class TestRelativeDates:
 
     def test_weekday_in_full_date_does_not_override_the_date(self):
         # "Mercredi 08 juillet" sent on a Tuesday: the written date wins
-        assert resolve_event_date("Mercredi 08 juillet", "2026-07-07T09:00:00") == "2026-07-08"
+        assert (
+            resolve_event_date("Mercredi 08 juillet", "2026-07-07T09:00:00")
+            == "2026-07-08"
+        )
 
 
 class TestUnresolvable:
@@ -89,7 +92,9 @@ class TestBackfill:
     def test_rewrites_relative_dates_in_place(self):
         with get_conn() as conn:
             eid = insert_email(conn)
-            row = conn.execute("SELECT date_utc FROM emails WHERE id=?", (eid,)).fetchone()
+            row = conn.execute(
+                "SELECT date_utc FROM emails WHERE id=?", (eid,)
+            ).fetchone()
             email_day = row["date_utc"][:10]
             conn.execute(
                 "INSERT INTO events(email_id, title, date) VALUES(?, 'a', 'aujourd''hui')",
@@ -114,7 +119,8 @@ class TestBackfill:
         with get_conn() as conn:
             eid = insert_email(conn)
             conn.execute(
-                "INSERT INTO events(email_id, title, date) VALUES(?, 'a', 'demain')", (eid,)
+                "INSERT INTO events(email_id, title, date) VALUES(?, 'a', 'demain')",
+                (eid,),
             )
         assert backfill_event_dates() == 1
         assert backfill_event_dates() == 0

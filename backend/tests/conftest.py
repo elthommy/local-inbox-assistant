@@ -28,9 +28,7 @@ def fake_embed(monkeypatch):
     """Deterministic, network-free embeddings (8 dims, derived from text)."""
 
     async def embed(self, texts):
-        return [
-            [((hash(t) >> (4 * i)) % 97) / 97.0 for i in range(8)] for t in texts
-        ]
+        return [[((hash(t) >> (4 * i)) % 97) / 97.0 for i in range(8)] for t in texts]
 
     monkeypatch.setattr(OllamaClient, "embed", embed)
     return embed

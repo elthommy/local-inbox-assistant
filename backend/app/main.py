@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Init the DB and kick a background index run for the app's lifetime."""
     init_db()
     apply_setting_overrides()
     # Kick an incremental index in the background on startup.

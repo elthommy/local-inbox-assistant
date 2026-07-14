@@ -28,8 +28,17 @@ progress: dict = {"phase": "idle", "done": 0, "total": 0, "error": None}
 _lock = asyncio.Lock()
 
 EMAIL_COLUMNS = (
-    "maildir_file", "message_id", "sender", "sender_email", "subject",
-    "date_utc", "unread", "snippet", "body", "in_reply_to", "refs",
+    "maildir_file",
+    "message_id",
+    "sender",
+    "sender_email",
+    "subject",
+    "date_utc",
+    "unread",
+    "snippet",
+    "body",
+    "in_reply_to",
+    "refs",
 )
 
 
@@ -68,6 +77,7 @@ def _store_parsed(parsed: list[dict]) -> list[int]:
 
 
 async def run_index(do_extract: bool = True) -> None:
+    """Run one indexing pass unless one is already in progress."""
     if _lock.locked():
         return
     async with _lock:
@@ -81,9 +91,17 @@ async def run_index(do_extract: bool = True) -> None:
 
 
 async def _run(do_extract: bool) -> None:
+    """Execute the indexing phases in order: scan/parse, embed, extract."""
     ollama = OllamaClient()
+    await _scan_and_parse()
+    await _embed_pending(ollama)
+    if do_extract:
+        await _extract_pending(ollama)
+    _mark_indexed()
 
-    # -- scan + parse ------------------------------------------------------
+
+async def _scan_and_parse() -> None:
+    """Scan the maildir window for unknown files, parse and store them."""
     progress.update(phase="scanning", done=0, total=0, error=None)
     with get_conn() as conn:
         known = {
@@ -108,11 +126,12 @@ async def _run(do_extract: bool) -> None:
         progress["done"] = i + 1
     _store_parsed(parsed)
 
-    # -- embed -------------------------------------------------------------
+
+async def _embed_pending(ollama: OllamaClient) -> None:
+    """Embed every not-yet-embedded email into Chroma, in small batches."""
     with get_conn() as conn:
         to_embed = [
-            dict(r)
-            for r in conn.execute("SELECT * FROM emails WHERE embedded = 0")
+            dict(r) for r in conn.execute("SELECT * FROM emails WHERE embedded = 0")
         ]
     progress.update(phase="embedding", done=0, total=len(to_embed))
     batch = 16
@@ -126,11 +145,9 @@ async def _run(do_extract: bool) -> None:
             )
         progress["done"] = min(i + batch, len(to_embed))
 
-    # -- extract -----------------------------------------------------------
-    if not do_extract:
-        with get_conn() as conn:
-            set_meta(conn, "last_indexed", datetime.now(timezone.utc).isoformat())
-        return
+
+async def _extract_pending(ollama: OllamaClient) -> None:
+    """Run LLM extraction (priority/tasks/events) on emails that need it."""
     with get_conn() as conn:
         pending = emails_needing_extraction(conn)
     progress.update(phase="extracting", done=0, total=len(pending))
@@ -145,5 +162,8 @@ async def _run(do_extract: bool) -> None:
                 mark_extraction_failed(conn, row["id"])
         progress["done"] = i + 1
 
+
+def _mark_indexed() -> None:
+    """Record the completion time of this indexing run."""
     with get_conn() as conn:
         set_meta(conn, "last_indexed", datetime.now(timezone.utc).isoformat())

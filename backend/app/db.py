@@ -68,11 +68,16 @@ CREATE TABLE IF NOT EXISTS seen_files (
 
 # Columns added after the initial release; applied to pre-existing DBs on startup.
 MIGRATIONS = [
-    ("emails", "dismissed", "ALTER TABLE emails ADD COLUMN dismissed INTEGER DEFAULT 0"),
+    (
+        "emails",
+        "dismissed",
+        "ALTER TABLE emails ADD COLUMN dismissed INTEGER DEFAULT 0",
+    ),
 ]
 
 
 def connect() -> sqlite3.Connection:
+    """Open a new WAL-mode connection with row access by column name."""
     conn = sqlite3.connect(settings.db_path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -81,6 +86,7 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    """Create the schema if missing and apply column migrations to old DBs."""
     with connect() as conn:
         conn.executescript(SCHEMA)
         for table, column, ddl in MIGRATIONS:
@@ -105,6 +111,7 @@ def triage_filter(alias: str = "e") -> str:
 
 @contextmanager
 def get_conn():
+    """Yield a fresh connection, committing on success and always closing."""
     conn = connect()
     try:
         yield conn
@@ -119,6 +126,7 @@ TUNABLE_SETTINGS = ("window_days", "extraction_window_days", "extraction_max_ema
 
 
 def apply_setting_overrides() -> None:
+    """Load UI-tuned setting overrides from the meta table into settings."""
     with get_conn() as conn:
         for key in TUNABLE_SETTINGS:
             value = get_meta(conn, f"setting_{key}")
@@ -127,11 +135,13 @@ def apply_setting_overrides() -> None:
 
 
 def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    """Read a value from the meta key/value table."""
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default
 
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    """Upsert a value into the meta key/value table."""
     conn.execute(
         "INSERT INTO meta(key, value) VALUES(?, ?) "
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

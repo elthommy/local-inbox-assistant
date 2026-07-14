@@ -58,6 +58,7 @@ FOCUS_BODY_MAX_CHARS = 8000
 
 
 def _format_context_blocks() -> tuple[str, str]:
+    """Render open tasks and events as prompt bullet lists (tasks, events)."""
     with get_conn() as conn:
         tasks = conn.execute(
             f"SELECT t.text, t.due, e.sender FROM tasks t "
@@ -72,17 +73,21 @@ def _format_context_blocks() -> tuple[str, str]:
             f"ORDER BY e.date_utc DESC LIMIT 20"
         ).fetchall()
     task_lines = [
-        f"- {t['text']}" + (f" (due {t['due']})" if t["due"] else "") + f" [from {t['sender']}]"
+        f"- {t['text']}"
+        + (f" (due {t['due']})" if t["due"] else "")
+        + f" [from {t['sender']}]"
         for t in tasks
     ] or ["(none)"]
     event_lines = [
-        f"- {ev['title']} — {ev['date']} {ev['time']}".rstrip() + f" [from {ev['sender']}]"
+        f"- {ev['title']} — {ev['date']} {ev['time']}".rstrip()
+        + f" [from {ev['sender']}]"
         for ev in events
     ] or ["(none)"]
     return "\n".join(task_lines), "\n".join(event_lines)
 
 
 def _format_email_focus(email_id: int) -> str:
+    """Render the pinned email as a prompt block ('' if it doesn't exist)."""
     with get_conn() as conn:
         row = conn.execute(
             "SELECT sender, sender_email, subject, date_utc, body, snippet "
@@ -142,6 +147,7 @@ async def build_messages(
 async def stream_answer(
     history: list[dict], use_context: bool, email_id: int | None = None
 ) -> AsyncIterator[str]:
+    """Stream the model's answer to the last user message in history."""
     ollama = OllamaClient()
     messages = await build_messages(ollama, history, use_context, email_id)
     async for chunk in ollama.chat_stream(messages):

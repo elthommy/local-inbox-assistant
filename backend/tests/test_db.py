@@ -38,9 +38,7 @@ def test_meta_roundtrip_and_upsert():
 
 def test_maildir_file_unique():
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO emails(maildir_file, subject) VALUES('a.eml', 's1')"
-        )
+        conn.execute("INSERT INTO emails(maildir_file, subject) VALUES('a.eml', 's1')")
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO emails(maildir_file, subject) VALUES('a.eml', 's2')"

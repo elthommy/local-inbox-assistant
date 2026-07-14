@@ -18,6 +18,7 @@ mcp = FastMCP("localmail")
 
 
 def _email_line(row) -> dict:
+    """Compact email descriptor shared by every tool's output."""
     return {
         "id": row["id"],
         "message_id": row["message_id"],

@@ -189,15 +189,24 @@ class TestDismiss:
 class TestMuteSender:
     def test_mute_toggle_roundtrip(self, client):
         seed(client)
-        r = client.post("/api/senders/mute", json={"sender_email": "Sarah@X.com"}).json()
+        r = client.post(
+            "/api/senders/mute", json={"sender_email": "Sarah@X.com"}
+        ).json()
         assert r == {"sender_email": "sarah@x.com", "muted": True}
-        assert client.get("/api/senders/muted").json()[0]["sender_email"] == "sarah@x.com"
-        r = client.post("/api/senders/mute", json={"sender_email": "sarah@x.com"}).json()
+        assert (
+            client.get("/api/senders/muted").json()[0]["sender_email"] == "sarah@x.com"
+        )
+        r = client.post(
+            "/api/senders/mute", json={"sender_email": "sarah@x.com"}
+        ).json()
         assert r["muted"] is False
         assert client.get("/api/senders/muted").json() == []
 
     def test_mute_requires_sender(self, client):
-        assert client.post("/api/senders/mute", json={"sender_email": "  "}).status_code == 400
+        assert (
+            client.post("/api/senders/mute", json={"sender_email": "  "}).status_code
+            == 400
+        )
 
     def test_muted_hidden_from_triage_but_kept_in_all(self, client):
         seed(client)
@@ -285,7 +294,10 @@ class TestChat:
         assert r.status_code == 400
         r = client.post(
             "/api/chat",
-            json={"messages": [{"role": "assistant", "content": "x"}], "model": "ollama"},
+            json={
+                "messages": [{"role": "assistant", "content": "x"}],
+                "model": "ollama",
+            },
         )
         assert r.status_code == 400
 

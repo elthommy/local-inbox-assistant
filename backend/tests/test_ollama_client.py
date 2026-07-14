@@ -15,16 +15,16 @@ def show_response(capabilities):
 
 
 def chat_stream_body(chunks):
-    lines = [
-        json.dumps({"message": {"content": c}, "done": False}) for c in chunks
-    ]
+    lines = [json.dumps({"message": {"content": c}, "done": False}) for c in chunks]
     lines.append(json.dumps({"message": {"content": ""}, "done": True}))
     return "\n".join(lines) + "\n"
 
 
 @respx.mock
 async def test_available_true_false():
-    route = respx.get(f"{BASE}/api/tags").mock(return_value=httpx.Response(200, json={"models": []}))
+    route = respx.get(f"{BASE}/api/tags").mock(
+        return_value=httpx.Response(200, json={"models": []})
+    )
     assert await OllamaClient().available() is True
     route.mock(side_effect=httpx.ConnectError("down"))
     assert await OllamaClient().available() is False
@@ -33,9 +33,20 @@ async def test_available_true_false():
 @respx.mock
 async def test_list_models():
     respx.get(f"{BASE}/api/tags").mock(
-        return_value=httpx.Response(200, json={"models": [{"name": "qwen3.6:latest"}, {"name": "nomic-embed-text:latest"}]})
+        return_value=httpx.Response(
+            200,
+            json={
+                "models": [
+                    {"name": "qwen3.6:latest"},
+                    {"name": "nomic-embed-text:latest"},
+                ]
+            },
+        )
     )
-    assert await OllamaClient().list_models() == ["qwen3.6:latest", "nomic-embed-text:latest"]
+    assert await OllamaClient().list_models() == [
+        "qwen3.6:latest",
+        "nomic-embed-text:latest",
+    ]
 
 
 @respx.mock
@@ -44,7 +55,9 @@ async def test_chat_stream_yields_tokens_and_stops_at_done():
     respx.post(f"{BASE}/api/chat").mock(
         return_value=httpx.Response(200, text=chat_stream_body(["Hel", "lo"]))
     )
-    out = [c async for c in OllamaClient().chat_stream([{"role": "user", "content": "hi"}])]
+    out = [
+        c async for c in OllamaClient().chat_stream([{"role": "user", "content": "hi"}])
+    ]
     assert out == ["Hel", "lo"]
 
 
@@ -72,7 +85,9 @@ async def test_chat_stream_no_think_field_for_plain_models():
 
 @respx.mock
 async def test_thinking_capability_is_cached():
-    show_route = respx.post(f"{BASE}/api/show").mock(return_value=show_response(["thinking"]))
+    show_route = respx.post(f"{BASE}/api/show").mock(
+        return_value=show_response(["thinking"])
+    )
     client = OllamaClient()
     assert await client._supports_thinking() is True
     assert await client._supports_thinking() is True
@@ -83,10 +98,17 @@ async def test_thinking_capability_is_cached():
 async def test_chat_stream_surfaces_ollama_error():
     respx.post(f"{BASE}/api/show").mock(return_value=show_response([]))
     respx.post(f"{BASE}/api/chat").mock(
-        return_value=httpx.Response(200, text=json.dumps({"error": "model not found"}) + "\n")
+        return_value=httpx.Response(
+            200, text=json.dumps({"error": "model not found"}) + "\n"
+        )
     )
     with pytest.raises(RuntimeError, match="model not found"):
-        [c async for c in OllamaClient().chat_stream([{"role": "user", "content": "hi"}])]
+        [
+            c
+            async for c in OllamaClient().chat_stream(
+                [{"role": "user", "content": "hi"}]
+            )
+        ]
 
 
 @respx.mock
@@ -98,7 +120,9 @@ async def test_chat_json_parses_content_and_sends_schema():
         )
     )
     schema = {"type": "object"}
-    result = await OllamaClient().chat_json([{"role": "user", "content": "x"}], schema=schema)
+    result = await OllamaClient().chat_json(
+        [{"role": "user", "content": "x"}], schema=schema
+    )
     assert result == {"priority": "low"}
     payload = json.loads(route.calls[0].request.content)
     assert payload["format"] == schema

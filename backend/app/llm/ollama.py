@@ -15,6 +15,7 @@ class OllamaClient:
     _thinking_cache: dict[str, bool] = {}
 
     def __init__(self, model: str | None = None):
+        """Bind to the configured Ollama URL, defaulting to the chat model."""
         self.base_url = settings.ollama_url.rstrip("/")
         self.model = model or settings.chat_model
 
@@ -39,6 +40,7 @@ class OllamaClient:
         return supports
 
     async def available(self) -> bool:
+        """Whether the Ollama server answers (short timeout, never raises)."""
         try:
             async with httpx.AsyncClient(timeout=3) as client:
                 r = await client.get(f"{self.base_url}/api/tags")
@@ -47,12 +49,14 @@ class OllamaClient:
             return False
 
     async def list_models(self) -> list[str]:
+        """Names of the models pulled on the Ollama server."""
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(f"{self.base_url}/api/tags")
             r.raise_for_status()
             return [m["name"] for m in r.json().get("models", [])]
 
     async def chat_stream(self, messages: list[dict]) -> AsyncIterator[str]:
+        """Yield the model's answer as text chunks (thinking disabled)."""
         payload = {"model": self.model, "messages": messages, "stream": True}
         if await self._supports_thinking():
             payload["think"] = False
@@ -93,6 +97,7 @@ class OllamaClient:
             return json.loads(data["message"]["content"])
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts with the configured embedding model, one vector each."""
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=10)) as client:
             r = await client.post(
                 f"{self.base_url}/api/embed",

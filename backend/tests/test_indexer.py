@@ -18,9 +18,17 @@ def make_eml(name, subject="hello", days_ago=1, body="some body text", msgid=Non
 
 def test_store_parsed_ignores_duplicates():
     email = {
-        "maildir_file": "a.eml", "message_id": "<a@x>", "sender": "S",
-        "sender_email": "s@x", "subject": "s", "date_utc": "2026-07-10T00:00:00+00:00",
-        "unread": False, "snippet": "b", "body": "b", "in_reply_to": "", "refs": "",
+        "maildir_file": "a.eml",
+        "message_id": "<a@x>",
+        "sender": "S",
+        "sender_email": "s@x",
+        "subject": "s",
+        "date_utc": "2026-07-10T00:00:00+00:00",
+        "unread": False,
+        "snippet": "b",
+        "body": "b",
+        "in_reply_to": "",
+        "refs": "",
     }
     first = indexer._store_parsed([email])
     second = indexer._store_parsed([email])
@@ -39,7 +47,10 @@ async def test_label_copy_in_other_folder_indexed_once(fake_embed):
     await indexer.run_index(do_extract=False)  # rerun must not reparse the copy
     with get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"] == 1
-        seen = [r["maildir_file"] for r in conn.execute("SELECT maildir_file FROM seen_files")]
+        seen = [
+            r["maildir_file"]
+            for r in conn.execute("SELECT maildir_file FROM seen_files")
+        ]
     assert seen in (["INBOX/cur/a.eml"], ["Agenda/cur/b.eml"])
     assert rag.chunk_count() == 1
 
@@ -59,7 +70,9 @@ async def test_full_run_parses_embeds_extracts(fake_embed, monkeypatch):
     async def fake_extract(ollama, row):
         return {
             "priority": "high" if row["subject"] == "invoice" else "low",
-            "tasks": [{"text": "pay it", "due": "soon"}] if row["subject"] == "invoice" else [],
+            "tasks": [{"text": "pay it", "due": "soon"}]
+            if row["subject"] == "invoice"
+            else [],
             "events": [],
         }
 
@@ -144,5 +157,7 @@ async def test_parse_failure_is_tolerated(fake_embed, monkeypatch):
     await indexer.run_index(do_extract=False)
     assert indexer.progress["phase"] == "idle"
     with get_conn() as conn:
-        files = [r["maildir_file"] for r in conn.execute("SELECT maildir_file FROM emails")]
+        files = [
+            r["maildir_file"] for r in conn.execute("SELECT maildir_file FROM emails")
+        ]
     assert files == ["good.eml"]

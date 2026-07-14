@@ -34,6 +34,7 @@ EMAIL_LIST_COLUMNS = (
 
 
 def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
+    """Row -> JSON dict, optionally embedding the email's task/event chips."""
     d = dict(row)
     d["unread"] = bool(d["unread"])
     d["dismissed"] = bool(d["dismissed"])
@@ -57,6 +58,7 @@ def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
 
 @router.get("/status")
 async def status():
+    """Health snapshot: Ollama reachability, Claude stub, index progress."""
     ollama = OllamaClient()
     ollama_up = await ollama.available()
     models = await ollama.list_models() if ollama_up else []
@@ -113,6 +115,7 @@ def stats():
 
 @router.get("/emails")
 def list_emails(filter: str = "all", limit: int = 100):
+    """List emails, newest first: filter is "all" or "priority"."""
     # dismissed/muted/handled mail stays visible in "all" (flagged, so the UI
     # can dim it and offer undo) but is excluded from the priority view
     where = (
@@ -131,6 +134,7 @@ def list_emails(filter: str = "all", limit: int = 100):
 
 @router.get("/emails/{email_id}")
 def get_email(email_id: int):
+    """One email with its full body and task/event chips."""
     with get_conn() as conn:
         row = conn.execute(
             f"SELECT {EMAIL_LIST_COLUMNS}, e.body FROM emails e WHERE e.id = ?",
@@ -143,6 +147,7 @@ def get_email(email_id: int):
 
 @router.get("/tasks")
 def list_tasks():
+    """All extracted tasks passing the triage filter, open ones first."""
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT t.id, t.email_id, t.text, t.due, t.done, "
@@ -156,10 +161,9 @@ def list_tasks():
 
 @router.post("/tasks/{task_id}/toggle")
 def toggle_task(task_id: int):
+    """Flip a task's done flag and return the new state."""
     with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE tasks SET done = 1 - done WHERE id = ?", (task_id,)
-        )
+        cur = conn.execute("UPDATE tasks SET done = 1 - done WHERE id = ?", (task_id,))
         if cur.rowcount == 0:
             raise HTTPException(404, "task not found")
         row = conn.execute("SELECT done FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -168,6 +172,7 @@ def toggle_task(task_id: int):
 
 @router.get("/events")
 def list_events():
+    """All extracted events passing the triage filter, newest email first."""
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT ev.id, ev.email_id, ev.title, ev.date, ev.time, "
@@ -223,6 +228,7 @@ def toggle_mute_sender(req: MuteRequest):
 
 @router.get("/senders/muted")
 def list_muted_senders():
+    """Muted sender addresses, most recently muted first."""
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT sender_email, created_utc FROM muted_senders "
@@ -239,6 +245,7 @@ class SettingsUpdate(BaseModel):
 
 @router.get("/settings")
 def read_settings():
+    """Current values of the UI-tunable settings."""
     return {k: getattr(settings, k) for k in TUNABLE_SETTINGS}
 
 
@@ -256,6 +263,7 @@ def update_settings(req: SettingsUpdate):
 
 @router.post("/reindex")
 async def reindex():
+    """Start a background index run unless one is already in progress."""
     if indexer.progress["phase"] not in ("idle", "error"):
         return {"started": False, "progress": dict(indexer.progress)}
     asyncio.create_task(indexer.run_index())
@@ -272,15 +280,19 @@ class ChatRequest(BaseModel):
 
 @router.post("/chat")
 async def chat(req: ChatRequest):
+    """Stream a chat answer over SSE (data: token events, then done/error)."""
     if not req.messages or req.messages[-1].get("role") != "user":
         raise HTTPException(400, "last message must be from user")
 
     async def sse():
+        """Yield the answer as SSE frames, converting failures to error events."""
         if req.model == "claude":
             yield f"event: error\ndata: {json.dumps({'message': NOT_CONFIGURED_MESSAGE})}\n\n"
             return
         try:
-            async for chunk in stream_answer(req.messages, req.use_context, req.email_id):
+            async for chunk in stream_answer(
+                req.messages, req.use_context, req.email_id
+            ):
                 yield f"data: {json.dumps({'token': chunk})}\n\n"
             yield "event: done\ndata: {}\n\n"
         except Exception as exc:

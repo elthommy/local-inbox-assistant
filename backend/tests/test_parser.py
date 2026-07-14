@@ -1,6 +1,5 @@
 from datetime import datetime, timezone
 
-import pytest
 
 from app.mail.parser import parse_date_only, parse_eml
 

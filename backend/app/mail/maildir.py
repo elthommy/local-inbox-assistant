@@ -22,6 +22,7 @@ from .parser import parse_date_only
 
 
 def window_start() -> datetime:
+    """UTC datetime where the indexing window begins (now - window_days)."""
     return datetime.now(timezone.utc) - timedelta(days=settings.window_days)
 
 
@@ -34,6 +35,7 @@ def rel_name(path: Path) -> str:
 
 
 def _excluded_folders() -> set[str]:
+    """Lowercased folder names from settings.exclude_folders (comma-separated)."""
     return {
         name.strip().lower()
         for name in settings.exclude_folders.split(",")
@@ -42,6 +44,7 @@ def _excluded_folders() -> set[str]:
 
 
 def _iter_eml_files(root: Path) -> list[Path]:
+    """All .eml files under root, pruning excluded folders during the walk."""
     if not root.is_dir():
         raise FileNotFoundError(f"maildir root not found: {root}")
     excluded = _excluded_folders()
@@ -50,8 +53,7 @@ def _iter_eml_files(root: Path) -> list[Path]:
         # Thunderbird stores a folder's subfolders in "<folder>.sbd/";
         # strip the suffix so excludes match the folder's display name.
         dirnames[:] = [
-            d for d in dirnames
-            if d.removesuffix(".sbd").lower() not in excluded
+            d for d in dirnames if d.removesuffix(".sbd").lower() not in excluded
         ]
         files += [Path(dirpath) / f for f in filenames if f.endswith(".eml")]
     return files

@@ -63,6 +63,7 @@ The email may be in French or English. Reply with JSON matching the schema, noth
 
 
 def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Unextracted, non-dismissed, non-muted emails inside the extraction window."""
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=settings.extraction_window_days)
     ).isoformat()
@@ -78,6 +79,7 @@ def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 async def extract_email(ollama: OllamaClient, row: sqlite3.Row) -> dict:
+    """Ask the LLM for priority/tasks/events of one email, as schema-bound JSON."""
     user_msg = (
         f"From: {row['sender']} <{row['sender_email']}>\n"
         f"Subject: {row['subject']}\n"
@@ -94,6 +96,7 @@ async def extract_email(ollama: OllamaClient, row: sqlite3.Row) -> dict:
 
 
 def store_extraction(conn: sqlite3.Connection, email_id: int, result: dict) -> None:
+    """Persist one extraction result, replacing the email's tasks and events."""
     priority = result.get("priority")
     if priority not in ("high", "medium", "low"):
         priority = "low"
@@ -130,7 +133,7 @@ def store_extraction(conn: sqlite3.Connection, email_id: int, result: dict) -> N
 
 
 def mark_extraction_failed(conn: sqlite3.Connection, email_id: int) -> None:
-    # Mark done with a default priority so we don't retry forever.
+    """Mark the email extracted with a default priority so we don't retry forever."""
     conn.execute(
         "UPDATE emails SET priority = 'low', extracted = 1 WHERE id = ?", (email_id,)
     )

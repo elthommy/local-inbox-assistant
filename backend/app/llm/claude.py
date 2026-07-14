@@ -22,15 +22,18 @@ class ClaudeClient:
     name = "claude"
 
     def __init__(self, model: str | None = None):
+        """Remember the target model; no client is created in the stub."""
         self.model = model or "claude-sonnet-4-5"
 
     async def available(self) -> bool:
-        # Will become: key present AND a cheap API ping succeeds.
+        """Always False. Will become: key present AND a cheap API ping succeeds."""
         return False
 
     def configured(self) -> bool:
+        """Whether an Anthropic API key is set (implementation still pending)."""
         return bool(settings.anthropic_api_key)
 
     async def chat_stream(self, messages: list[dict]) -> AsyncIterator[str]:
+        """Not implemented yet; raises with the user-facing explanation."""
         raise NotImplementedError(NOT_CONFIGURED_MESSAGE)
         yield  # pragma: no cover — makes this an async generator

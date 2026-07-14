@@ -49,6 +49,7 @@ _WEEKDAY_NUM = {tok: n for n, toks in _WEEKDAYS.items() for tok in toks}
 
 
 def _alt(tokens) -> str:
+    """Regex alternation of tokens, longest first so 'juillet' beats 'juil'."""
     return "|".join(sorted(tokens, key=len, reverse=True))
 
 
@@ -68,12 +69,11 @@ _WEEKDAY_RE = re.compile(rf"\b({_alt(_WEEKDAY_NUM)})\b")
 
 def _fold(s: str) -> str:
     """Lowercase and strip accents so 'Août' matches 'aout'."""
-    return (
-        unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
-    )
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
 
 
 def _valid(year: int, month: int, day: int) -> date | None:
+    """Build a date, or None when the combination doesn't exist."""
     try:
         return date(year, month, day)
     except ValueError:
@@ -81,6 +81,7 @@ def _valid(year: int, month: int, day: int) -> date | None:
 
 
 def _with_inferred_year(month: int, day: int, raw: str, email_day: date) -> date | None:
+    """Date for a day/month, taking the year from raw or the email's send date."""
     m = _YEAR_RE.search(raw)
     if m:
         return _valid(int(m.group(1)), month, day)
@@ -109,34 +110,41 @@ def resolve_event_date(raw: str, email_date_utc: str) -> str | None:
         d = _valid(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         return d.isoformat() if d else None
 
-    text = _fold(raw)
+    d = _from_folded_text(_fold(raw), email_day)
+    return d.isoformat() if d else None
 
+
+def _from_folded_text(text: str, email_day: date) -> date | None:
+    """Match the accent-folded date wordings, most specific pattern first."""
     if m := _NUMERIC_RE.search(text):
         day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if month > 12 and day <= 12:  # US mm/dd/yyyy, e.g. 07/13/2026
             day, month = month, day
-        d = _valid(year, month, day)
-        return d.isoformat() if d else None
-
-    d = None
+        return _valid(year, month, day)
     if m := _DAY_MONTH_RE.search(text):  # "18 juillet", "11th July 2026"
-        d = _with_inferred_year(_MONTH_NUM[m.group(2)], int(m.group(1)), text, email_day)
-    elif m := _MONTH_DAY_RE.search(text):  # "July 15th", "through July 9"
-        d = _with_inferred_year(_MONTH_NUM[m.group(1)], int(m.group(2)), text, email_day)
-    elif m := _NUMERIC_SHORT_RE.search(text):  # "23/06" — dd/mm, email year
+        return _with_inferred_year(
+            _MONTH_NUM[m.group(2)], int(m.group(1)), text, email_day
+        )
+    if m := _MONTH_DAY_RE.search(text):  # "July 15th", "through July 9"
+        return _with_inferred_year(
+            _MONTH_NUM[m.group(1)], int(m.group(2)), text, email_day
+        )
+    if m := _NUMERIC_SHORT_RE.search(text):  # "23/06" — dd/mm, email year
         day, month = int(m.group(1)), int(m.group(2))
         if month > 12 and day <= 12:
             day, month = month, day
-        d = _with_inferred_year(month, day, text, email_day)
-    elif _AFTER_TOMORROW_RE.search(text):
-        d = email_day + timedelta(days=2)
-    elif _TOMORROW_RE.search(text):
-        d = email_day + timedelta(days=1)
-    elif _TODAY_RE.search(text):
-        d = email_day
-    elif m := _WEEKDAY_RE.search(text):  # first such day on/after the send date
-        d = email_day + timedelta(days=(_WEEKDAY_NUM[m.group(1)] - email_day.weekday()) % 7)
-    return d.isoformat() if d else None
+        return _with_inferred_year(month, day, text, email_day)
+    if _AFTER_TOMORROW_RE.search(text):
+        return email_day + timedelta(days=2)
+    if _TOMORROW_RE.search(text):
+        return email_day + timedelta(days=1)
+    if _TODAY_RE.search(text):
+        return email_day
+    if m := _WEEKDAY_RE.search(text):  # first such day on/after the send date
+        return email_day + timedelta(
+            days=(_WEEKDAY_NUM[m.group(1)] - email_day.weekday()) % 7
+        )
+    return None
 
 
 def backfill_event_dates() -> int:
@@ -155,7 +163,9 @@ def backfill_event_dates() -> int:
                 continue
             iso = resolve_event_date(raw, row["date_utc"] or "")
             if iso and iso != raw:
-                conn.execute("UPDATE events SET date = ? WHERE id = ?", (iso, row["id"]))
+                conn.execute(
+                    "UPDATE events SET date = ? WHERE id = ?", (iso, row["id"])
+                )
                 updated += 1
     return updated
 

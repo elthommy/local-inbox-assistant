@@ -9,9 +9,7 @@ def make_eml(name: str, dt: datetime, mtime: datetime | None = None):
     p = settings.maildir / name
     p.parent.mkdir(parents=True, exist_ok=True)
     date_hdr = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-    p.write_bytes(
-        f"From: x@y.z\nSubject: {name}\nDate: {date_hdr}\n\nbody\n".encode()
-    )
+    p.write_bytes(f"From: x@y.z\nSubject: {name}\nDate: {date_hdr}\n\nbody\n".encode())
     ts = (mtime or dt).timestamp()
     os.utime(p, (ts, ts))
     return p

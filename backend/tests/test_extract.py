@@ -63,7 +63,9 @@ class TestStoreExtraction:
                 {
                     "priority": "high",
                     "tasks": [{"text": "pay invoice", "due": "Jul 20"}],
-                    "events": [{"title": "meeting", "date": "2026-07-14", "time": "14:00"}],
+                    "events": [
+                        {"title": "meeting", "date": "2026-07-14", "time": "14:00"}
+                    ],
                 },
             )
         with get_conn() as conn:
@@ -71,15 +73,30 @@ class TestStoreExtraction:
             assert email["priority"] == "high"
             assert email["extracted"] == 1
             task = conn.execute("SELECT * FROM tasks").fetchone()
-            assert (task["text"], task["due"], task["done"]) == ("pay invoice", "Jul 20", 0)
+            assert (task["text"], task["due"], task["done"]) == (
+                "pay invoice",
+                "Jul 20",
+                0,
+            )
             event = conn.execute("SELECT * FROM events").fetchone()
-            assert (event["title"], event["date"], event["time"]) == ("meeting", "2026-07-14", "14:00")
+            assert (event["title"], event["date"], event["time"]) == (
+                "meeting",
+                "2026-07-14",
+                "14:00",
+            )
 
     def test_invalid_priority_coerced_to_low(self):
         with get_conn() as conn:
             eid = insert_email(conn)
-            store_extraction(conn, eid, {"priority": "urgent!!", "tasks": [], "events": []})
-            assert conn.execute("SELECT priority FROM emails WHERE id=?", (eid,)).fetchone()[0] == "low"
+            store_extraction(
+                conn, eid, {"priority": "urgent!!", "tasks": [], "events": []}
+            )
+            assert (
+                conn.execute(
+                    "SELECT priority FROM emails WHERE id=?", (eid,)
+                ).fetchone()[0]
+                == "low"
+            )
 
     def test_blank_and_missing_fields_skipped(self):
         with get_conn() as conn:
@@ -87,7 +104,11 @@ class TestStoreExtraction:
             store_extraction(
                 conn,
                 eid,
-                {"priority": "low", "tasks": [{"text": "  "}, {}], "events": [{"title": ""}]},
+                {
+                    "priority": "low",
+                    "tasks": [{"text": "  "}, {}],
+                    "events": [{"title": ""}],
+                },
             )
             assert conn.execute("SELECT COUNT(*) c FROM tasks").fetchone()["c"] == 0
             assert conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"] == 0
@@ -100,20 +121,27 @@ class TestStoreExtraction:
                 eid,
                 {
                     "priority": "medium",
-                    "tasks": [{"text": "t" * 500}] + [{"text": f"t{i}"} for i in range(9)],
+                    "tasks": [{"text": "t" * 500}]
+                    + [{"text": f"t{i}"} for i in range(9)],
                     "events": [{"title": f"e{i}"} for i in range(9)],
                 },
             )
             assert conn.execute("SELECT COUNT(*) c FROM tasks").fetchone()["c"] == 5
             assert conn.execute("SELECT COUNT(*) c FROM events").fetchone()["c"] == 5
-            longest = conn.execute("SELECT MAX(LENGTH(text)) m FROM tasks").fetchone()["m"]
+            longest = conn.execute("SELECT MAX(LENGTH(text)) m FROM tasks").fetchone()[
+                "m"
+            ]
             assert longest <= 200
 
     def test_rerun_replaces_previous_items(self):
         with get_conn() as conn:
             eid = insert_email(conn)
-            store_extraction(conn, eid, {"priority": "low", "tasks": [{"text": "old"}], "events": []})
-            store_extraction(conn, eid, {"priority": "low", "tasks": [{"text": "new"}], "events": []})
+            store_extraction(
+                conn, eid, {"priority": "low", "tasks": [{"text": "old"}], "events": []}
+            )
+            store_extraction(
+                conn, eid, {"priority": "low", "tasks": [{"text": "new"}], "events": []}
+            )
             rows = conn.execute("SELECT text FROM tasks").fetchall()
             assert [r["text"] for r in rows] == ["new"]
 
@@ -122,7 +150,9 @@ def test_mark_extraction_failed():
     with get_conn() as conn:
         eid = insert_email(conn)
         mark_extraction_failed(conn, eid)
-        row = conn.execute("SELECT priority, extracted FROM emails WHERE id=?", (eid,)).fetchone()
+        row = conn.execute(
+            "SELECT priority, extracted FROM emails WHERE id=?", (eid,)
+        ).fetchone()
         assert (row["priority"], row["extracted"]) == ("low", 1)
     # no longer selected for extraction
     with get_conn() as conn:
