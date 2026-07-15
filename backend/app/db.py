@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS muted_senders (
 CREATE TABLE IF NOT EXISTS seen_files (
     maildir_file TEXT PRIMARY KEY
 );
+
+-- Files probed during a scan whose Date header fell outside the indexing
+-- window (or was missing). Cached so later scans don't reopen them; a file
+-- re-enters the window if window_days grows past its stored date.
+CREATE TABLE IF NOT EXISTS skipped_files (
+    maildir_file TEXT PRIMARY KEY,
+    date_utc TEXT -- ISO date from the header, '' when missing/unparsable
+);
 """
 
 # Columns added after the initial release; applied to pre-existing DBs on startup.

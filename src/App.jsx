@@ -567,12 +567,32 @@ function EventRow({ event, onDismiss, onGoTo, dateFormat }) {
   )
 }
 
+// phase -> human label; scanning is indeterminate (total unknown during the walk)
+const PHASE_LABELS = {
+  scanning: (p) => `scanning mail folders… ${p.done.toLocaleString()} files`,
+  checking: (p) => `discovering new emails… ${p.done}/${p.total}`,
+  parsing: (p) => `reading new emails… ${p.done}/${p.total}`,
+  embedding: (p) => `adding to RAG DB… ${p.done}/${p.total}`,
+  extracting: (p) => `model analysis… ${p.done}/${p.total}`,
+}
+
 function IndexProgress({ progress }) {
   if (!progress || progress.phase === 'idle') return null
-  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
+  if (progress.phase === 'error') {
+    return <div style={{ fontFamily: MONO, fontSize: 11, color: '#F87171' }}>indexing error: {progress.error}</div>
+  }
+  const label = (PHASE_LABELS[progress.phase] || ((p) => `${p.phase}… ${p.done}/${p.total}`))(progress)
+  const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : null
   return (
-    <div style={{ fontFamily: MONO, fontSize: 11, color: progress.phase === 'error' ? '#F87171' : '#FBBF24' }}>
-      {progress.phase === 'error' ? `indexing error: ${progress.error}` : `${progress.phase}… ${progress.done}/${progress.total} (${pct}%)`}
+    <div style={{ fontFamily: MONO, fontSize: 11, color: '#FBBF24', minWidth: 170 }}>
+      <span>{pct === null ? label : `${label} (${pct}%)`}</span>
+      <div style={{ height: 3, background: '#262b33', borderRadius: 2, marginTop: 3, overflow: 'hidden' }}>
+        {pct === null ? (
+          <div className="index-progress-indeterminate" style={{ width: '40%', height: '100%', background: '#FBBF24', borderRadius: 2 }} />
+        ) : (
+          <div style={{ width: `${pct}%`, height: '100%', background: '#FBBF24', borderRadius: 2, transition: 'width .3s' }} />
+        )}
+      </div>
     </div>
   )
 }

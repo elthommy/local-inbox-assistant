@@ -43,6 +43,17 @@ const STATUS = {
   },
 }
 
+// upcoming event fixture: always tomorrow, so the "events" tab never rots
+// as the real date advances (local-time parts to avoid UTC day shifts)
+const EVENT_DATE = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+})()
+const pad2 = (n) => String(n).padStart(2, '0')
+const EVENT_DATE_ISO = `${EVENT_DATE.getFullYear()}-${pad2(EVENT_DATE.getMonth() + 1)}-${pad2(EVENT_DATE.getDate())}`
+const EVENT_DATE_DMY = `${pad2(EVENT_DATE.getDate())}/${pad2(EVENT_DATE.getMonth() + 1)}/${EVENT_DATE.getFullYear()}`
+
 const EMAILS = [
   {
     id: 1,
@@ -56,7 +67,7 @@ const EMAILS = [
     muted: false,
     snippet: 'please take one more pass before Friday',
     tasks: [{ id: 11, text: 'Review Q3 report', due: 'Friday', done: false }],
-    events: [{ id: 21, title: 'Review meeting', date: '2026-07-14', time: '10:00' }],
+    events: [{ id: 21, title: 'Review meeting', date: EVENT_DATE_ISO, time: '10:00' }],
   },
 ]
 
@@ -65,7 +76,7 @@ const TASKS = [
 ]
 
 const EVENTS = [
-  { id: 21, email_id: 1, title: 'Review meeting', date: '2026-07-14', time: '10:00', source: 'Sarah Chen', date_utc: '2026-07-10' },
+  { id: 21, email_id: 1, title: 'Review meeting', date: EVENT_DATE_ISO, time: '10:00', source: 'Sarah Chen', date_utc: '2026-07-10' },
 ]
 
 beforeEach(() => {
@@ -118,7 +129,7 @@ describe('App', () => {
     expect(screen.getByText('corp.com')).toBeInTheDocument()
     expect(screen.getByText(/☐ Review Q3 report · Friday/)).toBeInTheDocument()
     // event chip date rendered in the system locale by default
-    const chipDate = new Date(2026, 6, 14).toLocaleDateString()
+    const chipDate = EVENT_DATE.toLocaleDateString()
     expect(screen.getByText(`◷ Review meeting · ${chipDate} 10:00`)).toBeInTheDocument()
   })
 
@@ -207,7 +218,7 @@ describe('App', () => {
       events: [],
     }
     api.events.mockResolvedValue([
-      { id: 22, email_id: 2, title: 'Stellaris leaving Game Pass', date: '2026-07-15', time: '', source: 'Paradox', date_utc: '2026-07-01' },
+      { id: 22, email_id: 2, title: 'Stellaris leaving Game Pass', date: EVENT_DATE_ISO, time: '', source: 'Paradox', date_utc: '2026-07-01' },
     ])
     api.email.mockResolvedValue(OLD_EMAIL)
     render(<App />)
@@ -260,9 +271,7 @@ describe('App', () => {
     render(<App />)
     await userEvent.click(await screen.findByText('events (1)'))
     expect(await screen.findByText('Review meeting')).toBeInTheDocument()
-    const badge = new Date(2026, 6, 14)
-      .toLocaleDateString([], { month: 'short', day: 'numeric' })
-      .toUpperCase()
+    const badge = EVENT_DATE.toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()
     expect(screen.getByText(badge)).toBeInTheDocument()
     expect(screen.getByText(/10:00 · from Sarah Chen/)).toBeInTheDocument()
   })
@@ -274,7 +283,7 @@ describe('App', () => {
     await userEvent.click(screen.getByText('⚙ MCP / RAG'))
     await userEvent.selectOptions(screen.getByLabelText('date format'), 'dmy')
     expect(localStorage.getItem('date_format')).toBe('dmy')
-    expect(screen.getByText('14/07/2026')).toBeInTheDocument()
+    expect(screen.getByText(EVENT_DATE_DMY)).toBeInTheDocument()
   })
 
   it('opens the settings drawer with real index data and MCP command', async () => {
@@ -414,7 +423,17 @@ describe('App', () => {
     })
     render(<App />)
     // shown both in the filter bar and the settings drawer
-    const indicators = await screen.findAllByText('embedding… 50/200 (25%)')
+    const indicators = await screen.findAllByText('adding to RAG DB… 50/200 (25%)')
+    expect(indicators.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('shows a live file count while the maildir walk runs', async () => {
+    api.status.mockResolvedValue({
+      ...STATUS,
+      index: { ...STATUS.index, progress: { phase: 'scanning', done: 12000, total: 0, error: null } },
+    })
+    render(<App />)
+    const indicators = await screen.findAllByText(/scanning mail folders… 12[\s,. ]000 files/)
     expect(indicators.length).toBeGreaterThanOrEqual(1)
   })
 })

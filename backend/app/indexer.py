@@ -100,6 +100,11 @@ async def _run(do_extract: bool) -> None:
     _mark_indexed()
 
 
+def _on_scan_progress(phase: str, done: int, total: int) -> None:
+    """Publish scan progress (called from the scan thread)."""
+    progress.update(phase=phase, done=done, total=total)
+
+
 async def _scan_and_parse() -> None:
     """Scan the maildir window for unknown files, parse and store them."""
     progress.update(phase="scanning", done=0, total=0, error=None)
@@ -111,7 +116,19 @@ async def _scan_and_parse() -> None:
                 "UNION SELECT maildir_file FROM seen_files"
             )
         }
-    new_files = await asyncio.to_thread(scan_window, known)
+        skipped = {
+            r["maildir_file"]: r["date_utc"]
+            for r in conn.execute("SELECT maildir_file, date_utc FROM skipped_files")
+        }
+    scan = await asyncio.to_thread(scan_window, known, skipped, _on_scan_progress)
+    if scan.out_of_window:
+        with get_conn() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO skipped_files(maildir_file, date_utc) "
+                "VALUES(?, ?)",
+                scan.out_of_window,
+            )
+    new_files = scan.new_files
 
     progress.update(phase="parsing", done=0, total=len(new_files))
     parsed = []

@@ -1,7 +1,9 @@
+import os
 from datetime import datetime, timedelta, timezone
 
 from app import indexer, rag
 from app.config import settings
+from app.mail import maildir as indexer_maildir
 from app.db import get_conn, get_meta
 
 
@@ -108,6 +110,25 @@ async def test_rerun_is_incremental(fake_embed, monkeypatch):
     assert sorted(calls) == ["one.eml", "two.eml"]
     with get_conn() as conn:
         assert conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"] == 2
+
+
+async def test_out_of_window_file_cached_and_not_reprobed(fake_embed, monkeypatch):
+    # an old message freshly synced: recent mtime, out-of-window Date header
+    make_eml("archive/cur/old.eml", days_ago=settings.window_days + 30)
+    old = settings.maildir / "archive/cur/old.eml"
+    now = datetime.now(timezone.utc).timestamp()
+    os.utime(old, (now, now))
+    await indexer.run_index(do_extract=False)
+    with get_conn() as conn:
+        rows = conn.execute("SELECT maildir_file FROM skipped_files").fetchall()
+    assert [r["maildir_file"] for r in rows] == ["archive/cur/old.eml"]
+
+    def boom(path):
+        raise AssertionError(f"re-probed {path}")
+
+    monkeypatch.setattr(indexer_maildir, "parse_date_only", boom)
+    await indexer.run_index(do_extract=False)
+    assert indexer.progress["phase"] == "idle"
 
 
 async def test_skip_extraction_flag(fake_embed):

@@ -50,7 +50,7 @@ UI's reindex button — runs four phases. Progress is exposed live via
 
 ```mermaid
 flowchart TD
-    A["scan (maildir.py)<br>walk maildir for .eml files newer than<br>window_days (90d), skip excluded folders<br>and already-known files"]
+    A["scan (maildir.py)<br>walk maildir for .eml files newer than<br>window_days (90d), skip excluded folders,<br>already-known files and cached<br>out-of-window probes (skipped_files)"]
     B["parse (parser.py)<br>stdlib email + BeautifulSoup:<br>headers, unread flag, best text body"]
     C["store (indexer.py)<br>INSERT into SQLite; duplicates by<br>Message-ID recorded in seen_files"]
     D["embed (rag.py)<br>chunk bodies (1200 chars, 150 overlap),<br>prepend sender/date header, embed via<br>nomic-embed-text, upsert into Chroma"]
@@ -116,7 +116,7 @@ Markdown in the chat panel.
 
 | Store | Path | Contents |
 |---|---|---|
-| SQLite | `backend/data/inbox.db` | emails, tasks, events, muted_senders, seen_files, meta (settings overrides, last_indexed) |
+| SQLite | `backend/data/inbox.db` | emails, tasks, events, muted_senders, seen_files, skipped_files, meta (settings overrides, last_indexed) |
 | ChromaDB | `backend/data/chroma/` | one collection `emails`: body chunks + embeddings, keyed `emailId:chunkIndex` |
 
 SQLite runs in WAL mode with a fresh connection per operation, so the

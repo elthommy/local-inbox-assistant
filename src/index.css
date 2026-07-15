@@ -104,6 +104,22 @@ a:hover {
   margin: 0.8em 0;
 }
 
+/* indexing progress bar during phases with no known total (maildir walk) */
+.index-progress-indeterminate {
+  animation: index-progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes index-progress-slide {
+  0% {
+    margin-left: 0%;
+  }
+  50% {
+    margin-left: 60%;
+  }
+  100% {
+    margin-left: 0%;
+  }
+}
+
 .settings-btn:hover {
   background: #20262f !important;
   border-color: #323945 !important;
