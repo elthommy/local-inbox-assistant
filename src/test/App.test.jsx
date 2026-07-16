@@ -267,13 +267,40 @@ describe('App', () => {
     expect(screen.getByText('tasks (0)')).toBeInTheDocument()
   })
 
-  it('shows events with formatted date chip', async () => {
+  it('shows events under a date header with sender and time', async () => {
     render(<App />)
     await userEvent.click(await screen.findByText('events (1)'))
     expect(await screen.findByText('Review meeting')).toBeInTheDocument()
-    const badge = EVENT_DATE.toLocaleDateString([], { month: 'short', day: 'numeric' }).toUpperCase()
-    expect(screen.getByText(badge)).toBeInTheDocument()
-    expect(screen.getByText(/10:00 · from Sarah Chen/)).toBeInTheDocument()
+    // EVENT_DATE is always tomorrow → the date group header says so
+    expect(screen.getByText(`▸ tomorrow · ${EVENT_DATE.toLocaleDateString()}`)).toBeInTheDocument()
+    expect(screen.getByText('10:00')).toBeInTheDocument()
+    expect(screen.getByText('from Sarah Chen')).toBeInTheDocument()
+  })
+
+  it('groups events by day and sender, collapsing reminder duplicates', async () => {
+    api.events.mockResolvedValue([
+      { id: 31, email_id: 3, title: 'Livraison prévue', date: EVENT_DATE_ISO, time: '', source: 'Amazon.fr', date_utc: '2026-07-12T08:00:00' },
+      { id: 32, email_id: 4, title: 'Livraison prévue', date: EVENT_DATE_ISO, time: '13:00', source: 'Amazon.fr', date_utc: '2026-07-13T08:00:00' },
+      { id: 33, email_id: 5, title: 'livraison  prévue', date: EVENT_DATE_ISO, time: '', source: 'Amazon.fr', date_utc: '2026-07-11T08:00:00' },
+      ...EVENTS,
+    ])
+    render(<App />)
+    // 4 raw events → 2 deduped rows, in both the tab label and the tile
+    await screen.findByText('events (2)')
+    expect(screen.getByText('upcoming events').parentElement).toHaveTextContent('2')
+    await userEvent.click(screen.getByText('events (2)'))
+    expect(await screen.findByText('Livraison prévue')).toBeInTheDocument()
+    // one shared date header, sender sub-headers, ×3 collapse badge
+    expect(screen.getAllByText(/▸ tomorrow ·/)).toHaveLength(1)
+    expect(screen.getByText('Amazon.fr')).toBeInTheDocument()
+    expect(screen.getByText('×3')).toBeInTheDocument()
+    expect(screen.getByText('from Amazon.fr · 3 emails')).toBeInTheDocument()
+    // the newest reminder's details win (its time shows on the badge)
+    expect(screen.getByText('13:00')).toBeInTheDocument()
+    // dismissing the collapsed row dismisses every source email
+    await userEvent.click(screen.getAllByTitle(/dismiss the source email/i)[0])
+    expect(api.dismissEmail).toHaveBeenCalledTimes(3)
+    for (const id of [3, 4, 5]) expect(api.dismissEmail).toHaveBeenCalledWith(id)
   })
 
   it('applies and persists the date format chosen in settings', async () => {
@@ -283,7 +310,8 @@ describe('App', () => {
     await userEvent.click(screen.getByText('⚙ MCP / RAG'))
     await userEvent.selectOptions(screen.getByLabelText('date format'), 'dmy')
     expect(localStorage.getItem('date_format')).toBe('dmy')
-    expect(screen.getByText(EVENT_DATE_DMY)).toBeInTheDocument()
+    // the events date group header re-renders in the chosen format
+    expect(screen.getByText(`▸ tomorrow · ${EVENT_DATE_DMY}`)).toBeInTheDocument()
   })
 
   it('opens the settings drawer with real index data and MCP command', async () => {

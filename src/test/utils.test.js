@@ -4,8 +4,10 @@ import {
   avatarColor,
   eventChipDate,
   eventDateShort,
+  eventGroupLabel,
   formatDate,
   formatEmailTime,
+  groupUpcomingEvents,
   parseEventDate,
   priorityColor,
   relativeTime,
@@ -193,5 +195,92 @@ describe('upcomingEvents', () => {
   })
   it('returns empty for no events', () => {
     expect(upcomingEvents([], now)).toEqual([])
+  })
+})
+
+describe('groupUpcomingEvents', () => {
+  const now = new Date('2026-07-14T15:00:00')
+
+  it('groups by day (soonest first) then by sender', () => {
+    const evs = [
+      { id: 1, email_id: 1, title: 'Livraison prévue', date: '2026-07-20', time: '', source: 'Amazon.fr', date_utc: '2026-07-13' },
+      { id: 2, email_id: 2, title: 'Train Paris-Lyon', date: '2026-07-18', time: '14:32', source: 'SNCF', date_utc: '2026-07-12' },
+      { id: 3, email_id: 3, title: 'Livraison prévue: chargeur', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-13' },
+    ]
+    const groups = groupUpcomingEvents(evs, now)
+    expect(groups.map((g) => g.key)).toEqual(['2026-07-18', '2026-07-20'])
+    expect(groups[0].senders.map((s) => s.sender)).toEqual(['SNCF', 'Amazon.fr'])
+    expect(groups[1].senders.map((s) => s.sender)).toEqual(['Amazon.fr'])
+  })
+
+  it('collapses same-sender same-title events on the same day, keeping every source email', () => {
+    const evs = [
+      { id: 1, email_id: 10, title: 'Livraison prévue', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-12' },
+      { id: 2, email_id: 11, title: 'livraison  PRÉVUE', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-13' },
+      { id: 3, email_id: 12, title: 'Livraison prévue', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-11' },
+    ]
+    const groups = groupUpcomingEvents(evs, now)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].senders[0].events).toHaveLength(1)
+    const entry = groups[0].senders[0].events[0]
+    expect(entry.count).toBe(3)
+    expect(entry.emailIds.sort()).toEqual([10, 11, 12])
+    // the copy from the newest email is the representative
+    expect(entry.email_id).toBe(11)
+  })
+
+  it('does not collapse across days, senders or titles', () => {
+    const evs = [
+      { id: 1, email_id: 1, title: 'Livraison prévue', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-12' },
+      { id: 2, email_id: 2, title: 'Livraison prévue', date: '2026-07-19', time: '', source: 'Amazon.fr', date_utc: '2026-07-12' },
+      { id: 3, email_id: 3, title: 'Livraison prévue', date: '2026-07-18', time: '', source: 'Cdiscount', date_utc: '2026-07-12' },
+      { id: 4, email_id: 4, title: 'Retrait en point relais', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-12' },
+    ]
+    const groups = groupUpcomingEvents(evs, now)
+    const rows = groups.flatMap((g) => g.senders.flatMap((s) => s.events))
+    expect(rows).toHaveLength(4)
+    expect(rows.every((r) => r.count === 1)).toBe(true)
+  })
+
+  it('never loses a time carried by an older duplicate', () => {
+    const evs = [
+      { id: 1, email_id: 1, title: 'Livraison prévue', date: '2026-07-18', time: '13:00', source: 'Amazon.fr', date_utc: '2026-07-12' },
+      { id: 2, email_id: 2, title: 'Livraison prévue', date: '2026-07-18', time: '', source: 'Amazon.fr', date_utc: '2026-07-13' },
+    ]
+    const entry = groupUpcomingEvents(evs, now)[0].senders[0].events[0]
+    expect(entry.email_id).toBe(2) // newest email wins…
+    expect(entry.time).toBe('13:00') // …but the known time is kept
+  })
+
+  it('puts events with unresolvable dates in a trailing date:null group', () => {
+    const evs = [
+      { id: 1, email_id: 1, title: 'Réunion', date: 'prochainement', time: '', source: 'Alice', date_utc: '2026-07-12' },
+      { id: 2, email_id: 2, title: 'Train', date: '2026-07-18', time: '', source: 'SNCF', date_utc: '2026-07-12' },
+    ]
+    const groups = groupUpcomingEvents(evs, now)
+    expect(groups.map((g) => g.key)).toEqual(['2026-07-18', 'no-date'])
+    expect(groups[1].date).toBeNull()
+    expect(groups[1].senders[0].events[0].title).toBe('Réunion')
+  })
+
+  it('drops past events like upcomingEvents does', () => {
+    const evs = [{ id: 1, email_id: 1, title: 'Livraison', date: '2026-07-10', time: '', source: 'Amazon.fr', date_utc: '2026-07-08' }]
+    expect(groupUpcomingEvents(evs, now)).toEqual([])
+  })
+})
+
+describe('eventGroupLabel', () => {
+  const now = new Date('2026-07-14T15:00:00')
+  it('labels today and tomorrow', () => {
+    expect(eventGroupLabel(new Date(2026, 6, 14), 'dmy', now)).toBe('today · 14/07/2026')
+    expect(eventGroupLabel(new Date(2026, 6, 15), 'dmy', now)).toBe('tomorrow · 15/07/2026')
+  })
+  it('uses the weekday for later days', () => {
+    const d = new Date(2026, 6, 18)
+    const weekday = d.toLocaleDateString([], { weekday: 'short' })
+    expect(eventGroupLabel(d, 'dmy', now)).toBe(`${weekday} · 18/07/2026`)
+  })
+  it('handles the undated group', () => {
+    expect(eventGroupLabel(null, 'dmy', now)).toBe('no date')
   })
 })

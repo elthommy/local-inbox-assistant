@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api, streamChat } from './api.js'
-import { DATE_FORMATS, avatarColor, eventChipDate, eventDateShort, formatEmailTime, nowTime, priorityColor, relativeTime, upcomingEvents } from './utils.js'
+import { DATE_FORMATS, avatarColor, eventChipDate, eventGroupLabel, formatEmailTime, groupUpcomingEvents, nowTime, priorityColor, relativeTime } from './utils.js'
 
 const MONO = "'IBM Plex Mono', monospace"
 const SANS = "'IBM Plex Sans', system-ui, sans-serif"
@@ -537,7 +537,11 @@ function TaskRow({ task, onToggle, onDismiss, onGoTo }) {
   )
 }
 
-function EventRow({ event, onDismiss, onGoTo, dateFormat }) {
+// One (possibly collapsed) event in the events tab: the date lives in the
+// group header above, so the badge shows the time; count > 1 means reminder
+// duplicates from several emails were folded into this row.
+function EventRow({ event, onDismiss, onGoTo }) {
+  const count = event.count || 1
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -553,12 +557,23 @@ function EventRow({ event, onDismiss, onGoTo, dateFormat }) {
           minWidth: 54,
         }}
       >
-        {eventDateShort(event.date, event.date_utc, dateFormat)}
+        {event.time || '—'}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: '#e2e5ea' }}>{event.title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 13, color: '#e2e5ea', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</span>
+          {count > 1 && (
+            <span
+              title={`Mentioned in ${count} emails (reminders collapsed)`}
+              style={{ fontFamily: MONO, fontSize: 10, color: '#FBBF24', background: '#2a2013', padding: '2px 7px', borderRadius: 9, flex: 'none' }}
+            >
+              ×{count}
+            </span>
+          )}
+        </div>
         <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
-          {event.time ? `${event.time} · ` : ''}from {event.source}
+          from {event.source}
+          {count > 1 ? ` · ${count} emails` : ''}
         </div>
       </div>
       <GoToEmailButton onGoTo={onGoTo} />
@@ -1124,15 +1139,17 @@ export default function App() {
     }
   }, [pendingScrollId, displayEmails])
 
-  // both change what several tabs and counters show → refetch everything
-  const dismissEmail = async (id) => {
+  // both change what several tabs and counters show → refetch everything.
+  // Collapsed event rows carry several source emails: dismiss them all.
+  const dismissEmails = async (ids) => {
     try {
-      await api.dismissEmail(id)
-      await refreshData()
+      await Promise.all(ids.map((id) => api.dismissEmail(id)))
     } catch {
-      /* refresh keeps UI consistent even on failure */
+      /* partial failure: the refresh below shows the real state */
     }
+    await refreshData()
   }
+  const dismissEmail = (id) => dismissEmails([id])
 
   const muteSender = async (senderEmail) => {
     try {
@@ -1164,7 +1181,13 @@ export default function App() {
   }
 
   const openTasks = tasks.filter((t) => !t.done)
-  const upcoming = useMemo(() => upcomingEvents(events), [events])
+  // events tab structure: day → sender → deduped rows; the tile/tab counts
+  // use the deduped rows so they match what the tab shows
+  const groupedEvents = useMemo(() => groupUpcomingEvents(events), [events])
+  const upcomingCount = useMemo(
+    () => groupedEvents.reduce((n, g) => n + g.senders.reduce((m, s) => m + s.events.length, 0), 0),
+    [groupedEvents],
+  )
   // tasks/events tiles count the same client-side lists as the tabs below,
   // so the two can never disagree; stats is only the source for counts the
   // UI doesn't hold (unread, high priority). `stats` doubles as the
@@ -1172,7 +1195,7 @@ export default function App() {
   const statTiles = [
     { label: 'unread', value: stats?.unread ?? '–', color: '#e8eaed' },
     { label: 'open tasks', value: stats ? openTasks.length : '–', color: '#FBBF24' },
-    { label: 'upcoming events', value: stats ? upcoming.length : '–', color: '#4ADE80' },
+    { label: 'upcoming events', value: stats ? upcomingCount : '–', color: '#4ADE80' },
     { label: 'high priority', value: stats?.high_priority ?? '–', color: '#F87171' },
   ]
 
@@ -1180,7 +1203,7 @@ export default function App() {
     { id: 'priority', label: `priority (${stats?.high_priority ?? 0})` },
     { id: 'all', label: `all mail (${indexedCount})` },
     { id: 'tasks', label: `tasks (${openTasks.length})` },
-    { id: 'events', label: `events (${upcoming.length})` },
+    { id: 'events', label: `events (${upcomingCount})` },
   ]
 
   return (
@@ -1293,10 +1316,33 @@ export default function App() {
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>no tasks extracted yet</div>
             )}
             {filter === 'events' &&
-              upcoming.map((ev) => (
-                <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmail(ev.email_id)} onGoTo={() => goToEmail(ev.email_id)} dateFormat={dateFormat} />
+              groupedEvents.map((g) => (
+                <div key={g.key} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                  <div
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 11,
+                      color: '#7dd3fc',
+                      textTransform: 'uppercase',
+                      letterSpacing: '.05em',
+                      marginTop: 8,
+                      paddingBottom: 4,
+                      borderBottom: '1px solid #1c2027',
+                    }}
+                  >
+                    ▸ {eventGroupLabel(g.date, dateFormat)}
+                  </div>
+                  {g.senders.map((s) => (
+                    <div key={s.sender || '(unknown)'} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', paddingLeft: 2 }}>{s.sender || '(unknown sender)'}</div>
+                      {s.events.map((ev) => (
+                        <EventRow key={ev.id} event={ev} onDismiss={() => dismissEmails(ev.emailIds)} onGoTo={() => goToEmail(ev.email_id)} />
+                      ))}
+                    </div>
+                  ))}
+                </div>
               ))}
-            {filter === 'events' && upcoming.length === 0 && (
+            {filter === 'events' && upcomingCount === 0 && (
               <div style={{ fontFamily: MONO, fontSize: 12, color: '#3a4048', textAlign: 'center', marginTop: 40 }}>
                 {events.length ? 'no upcoming events' : 'no events extracted yet'}
               </div>

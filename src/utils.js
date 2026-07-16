@@ -122,6 +122,85 @@ export function upcomingEvents(events, now = new Date()) {
   return dated.map(([, ev]) => ev).concat(undated)
 }
 
+// Same local calendar day as a stable grouping key (YYYY-MM-DD).
+function dayKey(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// Case/whitespace-insensitive title key for spotting reminder duplicates.
+function titleKey(title) {
+  return (title || '').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
+// Fold a duplicate into its collapsed entry: the copy from the newest email
+// wins (latest reminder has the freshest details), but a time carried by any
+// copy is never lost.
+function mergeDuplicate(entry, ev) {
+  if (!entry.emailIds.includes(ev.email_id)) entry.emailIds.push(ev.email_id)
+  entry.count = entry.emailIds.length
+  if ((ev.date_utc || '') > (entry.date_utc || '')) {
+    const keptTime = entry.time
+    Object.assign(entry, ev)
+    if (!entry.time) entry.time = keptTime
+  } else if (!entry.time && ev.time) {
+    entry.time = ev.time
+  }
+}
+
+// Upcoming events grouped by calendar day, then by sender, for the events
+// tab. Within one (day, sender) group, events with the same title — reminder
+// emails resent by the same service — are collapsed into a single entry
+// carrying `count` and the `emailIds` of every copy. Days come soonest
+// first; events whose date can't be parsed form a trailing date:null group
+// (same policy as upcomingEvents: they can't be proven past).
+export function groupUpcomingEvents(events, now = new Date()) {
+  const groups = []
+  const byDay = new Map()
+  for (const ev of upcomingEvents(events, now)) {
+    const d = parseEventDate(ev.date, ev.date_utc)
+    const key = d ? dayKey(d) : 'no-date'
+    let group = byDay.get(key)
+    if (!group) {
+      group = { key, date: d, senders: [], _senders: new Map() }
+      byDay.set(key, group)
+      groups.push(group)
+    }
+    let senderGroup = group._senders.get(ev.source)
+    if (!senderGroup) {
+      senderGroup = { sender: ev.source, events: [], _titles: new Map() }
+      group._senders.set(ev.source, senderGroup)
+      group.senders.push(senderGroup)
+    }
+    const entry = senderGroup._titles.get(titleKey(ev.title))
+    if (entry) {
+      mergeDuplicate(entry, ev)
+    } else {
+      const fresh = { ...ev, count: 1, emailIds: [ev.email_id] }
+      senderGroup._titles.set(titleKey(ev.title), fresh)
+      senderGroup.events.push(fresh)
+    }
+  }
+  return groups.map(({ key, date, senders }) => ({
+    key,
+    date,
+    senders: senders.map(({ sender, events: evs }) => ({ sender, events: evs })),
+  }))
+}
+
+// Header label for a date group: "today · 18/07/2026", "tomorrow · …", or
+// weekday + date for later days; null date (unresolvable) → "no date".
+export function eventGroupLabel(d, fmt = 'system', now = new Date()) {
+  if (!d) return 'no date'
+  const sameDay = (a, b) => a.toDateString() === b.toDateString()
+  const label = formatDate(d, fmt)
+  if (sameDay(d, now)) return `today · ${label}`
+  const tomorrow = new Date(now)
+  tomorrow.setDate(now.getDate() + 1)
+  if (sameDay(d, tomorrow)) return `tomorrow · ${label}`
+  return `${d.toLocaleDateString([], { weekday: 'short' })} · ${label}`
+}
+
 export function nowTime() {
   return new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
