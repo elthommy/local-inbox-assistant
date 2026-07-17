@@ -56,6 +56,11 @@ def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
     return d
 
 
+def _model_pulled(model: str, pulled: list[str]) -> bool:
+    """Whether a model name (with or without tag) is among the pulled models."""
+    return any(m == model or m.startswith(model + ":") for m in pulled)
+
+
 @router.get("/status")
 async def status():
     """Health snapshot: Ollama reachability, Claude stub, index progress."""
@@ -70,11 +75,10 @@ async def status():
             "up": ollama_up,
             "url": settings.ollama_url,
             "chat_model": settings.chat_model,
+            "extraction_model": settings.extraction_model,
             "embed_model": settings.embed_model,
-            "chat_model_pulled": any(
-                m == settings.chat_model or m.startswith(settings.chat_model + ":")
-                for m in models
-            ),
+            "chat_model_pulled": _model_pulled(settings.chat_model, models),
+            "extraction_model_pulled": _model_pulled(settings.extraction_model, models),
         },
         "claude": {
             "configured": ClaudeClient().configured(),

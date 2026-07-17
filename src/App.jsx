@@ -745,7 +745,7 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
                 <div>
                   <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Ollama · {ollama ? ollama.url.replace(/^https?:\/\//, '') : '…'}</div>
                   <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
-                    {ollama ? `${ollama.chat_model} + ${ollama.embed_model}` : ''}
+                    {ollama ? [ollama.chat_model, ollama.extraction_model, ollama.embed_model].filter((m, i, all) => m && all.indexOf(m) === i).join(' + ') : ''}
                   </div>
                 </div>
                 {ollama?.up ? (

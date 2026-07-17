@@ -69,7 +69,10 @@ async def test_full_run_parses_embeds_extracts(fake_embed, monkeypatch):
     make_eml("one.eml", subject="invoice", days_ago=2)
     make_eml("two.eml", subject="newsletter", days_ago=3)
 
+    extract_models = []
+
     async def fake_extract(ollama, row):
+        extract_models.append(ollama.model)
         return {
             "priority": "high" if row["subject"] == "invoice" else "low",
             "tasks": [{"text": "pay it", "due": "soon"}]
@@ -80,6 +83,8 @@ async def test_full_run_parses_embeds_extracts(fake_embed, monkeypatch):
 
     monkeypatch.setattr(indexer, "extract_email", fake_extract)
     await indexer.run_index(do_extract=True)
+
+    assert set(extract_models) == {settings.extraction_model}
 
     assert indexer.progress["phase"] == "idle"
     assert indexer.progress["error"] is None

@@ -11,6 +11,7 @@ import logging
 from datetime import datetime, timezone
 
 from . import rag
+from .config import settings
 from .db import get_conn, set_meta
 from .extract import (
     emails_needing_extraction,
@@ -92,11 +93,10 @@ async def run_index(do_extract: bool = True) -> None:
 
 async def _run(do_extract: bool) -> None:
     """Execute the indexing phases in order: scan/parse, embed, extract."""
-    ollama = OllamaClient()
     await _scan_and_parse()
-    await _embed_pending(ollama)
+    await _embed_pending(OllamaClient())
     if do_extract:
-        await _extract_pending(ollama)
+        await _extract_pending(OllamaClient(settings.extraction_model))
     _mark_indexed()
 
 

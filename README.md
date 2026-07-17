@@ -27,7 +27,8 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
 ## Requirements
 
 - [Ollama](https://ollama.com) running locally with:
-  - an instruct model for chat/extraction (default: `qwen3.6`)
+  - an instruct model for chat and one for extraction — separate settings,
+    both default to `qwen3:8b` (`ollama pull qwen3:8b`)
   - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
@@ -72,6 +73,35 @@ npm run dev            # http://localhost:5173 (proxies /api to :8000)
 
 Backend configuration lives in `backend/.env` (see `backend/.env.example`):
 mail root path, excluded folders, indexing window, model names, Ollama URL.
+
+### Changing models
+
+Chat and email parsing (the task/event/priority extraction pass) use two
+separate settings, so a lighter model can triage the inbox while a bigger
+one answers questions — or vice versa. Both default to `qwen3:8b`. Set them
+in `backend/.env` (or as environment variables) and restart the backend:
+
+```bash
+INBOX_CHAT_MODEL=qwen3:8b          # powers the chat panel
+INBOX_EXTRACTION_MODEL=qwen3:8b    # powers email parsing (priority/tasks/events)
+INBOX_EMBED_MODEL=nomic-embed-text # powers the RAG index
+```
+
+Any model pulled in Ollama works (`ollama list`); the settings drawer shows
+which models are active and whether they are pulled. Emails already parsed
+are not re-parsed after a model switch — extraction results are cached in
+SQLite. Changing `INBOX_EMBED_MODEL` requires rebuilding the RAG index
+(delete `backend/data/chroma/`): vectors from different embedding models
+are not comparable.
+
+To compare candidate extraction models on your own mail before switching,
+run the benchmark (read-only, compares against the stored results and writes
+`backend/data/benchmark/summary.csv` + `disagreements.md`):
+
+```bash
+cd backend
+uv run python -m scripts.benchmark_extraction --models qwen3:4b qwen3:8b
+```
 
 ### Which folders are indexed
 

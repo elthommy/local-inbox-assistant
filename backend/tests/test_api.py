@@ -50,13 +50,14 @@ class TestStatus:
             return True
 
         async def models(self):
-            return ["qwen3.6:latest", "nomic-embed-text:latest"]
+            return ["qwen3:8b", "nomic-embed-text:latest"]
 
         monkeypatch.setattr(OllamaClient, "available", up)
         monkeypatch.setattr(OllamaClient, "list_models", models)
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is True
         assert data["ollama"]["chat_model_pulled"] is True
+        assert data["ollama"]["extraction_model_pulled"] is True
         assert data["claude"] == {"configured": False, "implemented": False}
         assert data["index"]["emails"] == 0
         assert data["index"]["progress"]["phase"] in ("idle", "error")
@@ -69,6 +70,7 @@ class TestStatus:
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is False
         assert data["ollama"]["chat_model_pulled"] is False
+        assert data["ollama"]["extraction_model_pulled"] is False
 
 
 class TestStatsAndLists:

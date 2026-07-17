@@ -22,7 +22,10 @@ class Settings(BaseSettings):
     extraction_max_emails: int = 300
 
     ollama_url: str = "http://localhost:11434"
-    chat_model: str = "qwen3.6"
+    chat_model: str = "qwen3:8b"
+    # Extraction can run a different (typically lighter) model than chat;
+    # picked from scripts/benchmark_extraction.py results.
+    extraction_model: str = "qwen3:8b"
     embed_model: str = "nomic-embed-text"
 
     # Claude cloud support is a later step; key is read but unused for now.
