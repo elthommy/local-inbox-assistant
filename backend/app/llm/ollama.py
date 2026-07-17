@@ -50,10 +50,17 @@ class OllamaClient:
 
     async def list_models(self) -> list[str]:
         """Names of the models pulled on the Ollama server."""
+        return [m["name"] for m in await self.list_models_info()]
+
+    async def list_models_info(self) -> list[dict]:
+        """Name and size in bytes of each model pulled on the Ollama server."""
         async with httpx.AsyncClient(timeout=5) as client:
             r = await client.get(f"{self.base_url}/api/tags")
             r.raise_for_status()
-            return [m["name"] for m in r.json().get("models", [])]
+            return [
+                {"name": m["name"], "size": m.get("size", 0)}
+                for m in r.json().get("models", [])
+            ]
 
     async def chat_stream(self, messages: list[dict]) -> AsyncIterator[str]:
         """Yield the model's answer as text chunks (thinking disabled)."""

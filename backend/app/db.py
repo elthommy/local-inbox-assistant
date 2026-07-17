@@ -128,18 +128,24 @@ def get_conn():
         conn.close()
 
 
-# Settings tunable from the UI. Overrides live in the meta table (keys
-# "setting_<name>") and take precedence over .env / defaults.
-TUNABLE_SETTINGS = ("window_days", "extraction_window_days", "extraction_max_emails")
+# Settings tunable from the UI (name -> type). Overrides live in the meta
+# table (keys "setting_<name>") and take precedence over .env / defaults.
+TUNABLE_SETTINGS = {
+    "window_days": int,
+    "extraction_window_days": int,
+    "extraction_max_emails": int,
+    "chat_model": str,
+    "extraction_model": str,
+}
 
 
 def apply_setting_overrides() -> None:
     """Load UI-tuned setting overrides from the meta table into settings."""
     with get_conn() as conn:
-        for key in TUNABLE_SETTINGS:
+        for key, cast in TUNABLE_SETTINGS.items():
             value = get_meta(conn, f"setting_{key}")
             if value:
-                setattr(settings, key, int(value))
+                setattr(settings, key, cast(value))
 
 
 def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:

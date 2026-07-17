@@ -30,6 +30,7 @@ export const api = {
   settings: () => getJSON('/settings'),
   updateSettings: (values) => postJSON('/settings', values),
   reindex: () => postJSON('/reindex'),
+  reextract: () => postJSON('/reextract'),
 }
 
 /**

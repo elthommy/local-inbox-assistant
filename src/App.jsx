@@ -94,7 +94,10 @@ function Header({ ollamaUp, onOpenSettings }) {
   )
 }
 
-function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
+function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
+  // the configured model may not be in the pulled list (Ollama down / model
+  // removed): keep it selectable so the dropdown never shows a wrong value
+  const modelOptions = models.some((m) => m.name === chatModel) ? models : [{ name: chatModel }, ...models]
   const scrollRef = useRef(null)
   useEffect(() => {
     const el = scrollRef.current
@@ -116,8 +119,9 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
         }}
       >
         <select
-          value={model}
-          onChange={onModelChange}
+          value={chatModel}
+          aria-label="chat model"
+          onChange={onChatModelChange}
           style={{
             background: '#161a20',
             border: '1px solid #262b33',
@@ -131,7 +135,11 @@ function ChatPane({ chatModel, model, onModelChange, useContext, toggleContext, 
             maxWidth: '55%',
           }}
         >
-          <option value="ollama">{chatModel} · Ollama (local)</option>
+          {modelOptions.map((m) => (
+            <option key={m.name} value={m.name}>
+              {m.name} · Ollama (local)
+            </option>
+          ))}
           <option value="claude" disabled>
             Claude (cloud) — coming soon
           </option>
@@ -612,6 +620,79 @@ function IndexProgress({ progress }) {
   )
 }
 
+const fmtModelSize = (bytes) => (bytes ? ` · ${(bytes / 1e9).toFixed(1)} GB` : '')
+
+const MODEL_ROLES = [
+  { key: 'chat_model', label: 'chat model', hint: 'answers questions in the chat panel' },
+  { key: 'extraction_model', label: 'email parsing model', hint: 'extracts priority / tasks / events from mail' },
+]
+
+function ModelSettings({ ollama, busy, onSave, onReextract }) {
+  const models = ollama?.models ?? []
+  const selectStyle = {
+    background: '#0e1116',
+    border: '1px solid #262b33',
+    color: '#e8eaed',
+    fontFamily: MONO,
+    fontSize: 12,
+    padding: '6px 8px',
+    borderRadius: 6,
+    cursor: 'pointer',
+    flex: 'none',
+    maxWidth: 180,
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {MODEL_ROLES.map((f) => {
+        const current = ollama?.[f.key] ?? ''
+        const options = models.some((m) => m.name === current) ? models : [{ name: current }, ...models]
+        return (
+          <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>{f.label}</div>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280', marginTop: 1 }}>{f.hint}</div>
+            </div>
+            <select
+              value={current}
+              aria-label={f.label}
+              disabled={!ollama?.up}
+              onChange={(e) => onSave({ [f.key]: e.target.value })}
+              style={selectStyle}
+            >
+              {options.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name}
+                  {fmtModelSize(m.size)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )
+      })}
+      <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280' }}>
+        a parsing model switch only affects new mail — already-parsed emails keep their results
+      </div>
+      <button
+        onClick={onReextract}
+        disabled={busy || !ollama?.up}
+        style={{
+          alignSelf: 'flex-start',
+          background: busy || !ollama?.up ? '#1a1f27' : '#1f6feb',
+          border: `1px solid ${busy || !ollama?.up ? '#262b33' : '#1f6feb'}`,
+          color: busy || !ollama?.up ? '#5b6270' : '#fff',
+          fontFamily: MONO,
+          fontSize: 11,
+          padding: '6px 12px',
+          borderRadius: 6,
+          cursor: busy || !ollama?.up ? 'default' : 'pointer',
+        }}
+      >
+        re-parse recent emails
+      </button>
+    </div>
+  )
+}
+
 const TUNABLE_FIELDS = [
   { key: 'window_days', label: 'index window (days)', hint: 'mail newer than this is parsed + embedded' },
   { key: 'extraction_window_days', label: 'extraction window (days)', hint: 'mail newer than this gets priority/tasks/events' },
@@ -682,7 +763,7 @@ function IndexingSettings({ tunables, onSave }) {
   )
 }
 
-function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, mutedSenders, onUnmute, tunables, onSaveSettings, dateFormat, onDateFormatChange }) {
+function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, onReextract, mutedSenders, onUnmute, tunables, onSaveSettings, dateFormat, onDateFormatChange }) {
   const [showMcp, setShowMcp] = useState(true)
   const sectionTitle = {
     fontFamily: MONO,
@@ -770,6 +851,18 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
                   soon
                 </span>
               </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>Models</div>
+            <div style={card}>
+              <ModelSettings
+                ollama={ollama}
+                busy={!['idle', 'error'].includes(index?.progress?.phase ?? 'idle')}
+                onSave={onSaveSettings}
+                onReextract={onReextract}
+              />
             </div>
           </div>
 
@@ -949,7 +1042,6 @@ export default function App() {
   const [events, setEvents] = useState([])
   const [mutedSenders, setMutedSenders] = useState([])
   const [tunables, setTunables] = useState(null)
-  const [model, setModel] = useState('ollama')
   const [useContext, setUseContext] = useState(true)
   const [settingsOpen, setSettingsOpen] = useState(false)
   // display preference, per browser (not a backend tunable)
@@ -1032,6 +1124,7 @@ export default function App() {
   }, [refreshData])
 
   const chatModel = status?.ollama?.chat_model || 'ollama'
+  const models = status?.ollama?.models ?? []
   const indexedCount = status?.index?.emails ?? 0
 
   // shared by the chat input and the per-email "summarize" button: append the
@@ -1047,7 +1140,7 @@ export default function App() {
       await streamChat(
         {
           messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text })),
-          model,
+          model: 'ollama',
           useContext,
           emailId,
         },
@@ -1164,6 +1257,8 @@ export default function App() {
     try {
       const saved = await api.updateSettings(values)
       setTunables(saved)
+      // model choices are displayed from /status (chat header, drawer): refresh
+      if (values.chat_model || values.extraction_model) setStatus(await api.status())
     } catch {
       /* leave the draft as-is; the drawer keeps showing unsaved values */
     }
@@ -1172,6 +1267,17 @@ export default function App() {
   const reindex = async () => {
     try {
       await api.reindex()
+      const s = await api.status()
+      setStatus(s)
+      indexingRef.current = true
+    } catch {
+      /* status poll will surface it */
+    }
+  }
+
+  const reextract = async () => {
+    try {
+      await api.reextract()
       const s = await api.status()
       setStatus(s)
       indexingRef.current = true
@@ -1225,8 +1331,10 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <ChatPane
           chatModel={chatModel}
-          model={model}
-          onModelChange={(e) => setModel(e.target.value)}
+          models={models}
+          onChatModelChange={(e) => {
+            if (e.target.value !== 'claude') saveSettings({ chat_model: e.target.value })
+          }}
           useContext={useContext}
           toggleContext={() => setUseContext((v) => !v)}
           indexedCount={indexedCount}
@@ -1358,6 +1466,7 @@ export default function App() {
         useContext={useContext}
         toggleContext={() => setUseContext((v) => !v)}
         onReindex={reindex}
+        onReextract={reextract}
         mutedSenders={mutedSenders}
         onUnmute={muteSender}
         tunables={tunables}

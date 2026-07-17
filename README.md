@@ -27,8 +27,8 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
 ## Requirements
 
 - [Ollama](https://ollama.com) running locally with:
-  - an instruct model for chat and one for extraction — separate settings,
-    both default to `qwen3:8b` (`ollama pull qwen3:8b`)
+  - an instruct model for chat and one for email parsing — both default to
+    `qwen3:8b` (`ollama pull qwen3:8b`), switchable in the UI
   - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
@@ -77,22 +77,26 @@ mail root path, excluded folders, indexing window, model names, Ollama URL.
 ### Changing models
 
 Chat and email parsing (the task/event/priority extraction pass) use two
-separate settings, so a lighter model can triage the inbox while a bigger
-one answers questions — or vice versa. Both default to `qwen3:8b`. Set them
-in `backend/.env` (or as environment variables) and restart the backend:
+separate models, so a lighter model can triage the inbox while a bigger one
+answers questions — or vice versa. Both default to `qwen3:8b` and are chosen
+in the UI, from any non-embedding model pulled in Ollama (`ollama pull …`):
 
-```bash
-INBOX_CHAT_MODEL=qwen3:8b          # powers the chat panel
-INBOX_EXTRACTION_MODEL=qwen3:8b    # powers email parsing (priority/tasks/events)
-INBOX_EMBED_MODEL=nomic-embed-text # powers the RAG index
-```
+- **settings drawer → Models**: one dropdown for the chat model, one for the
+  email parsing model, each option showing the model's size;
+- **chat panel header**: the model dropdown there is the same chat-model
+  setting, just closer at hand.
 
-Any model pulled in Ollama works (`ollama list`); the settings drawer shows
-which models are active and whether they are pulled. Emails already parsed
-are not re-parsed after a model switch — extraction results are cached in
-SQLite. Changing `INBOX_EMBED_MODEL` requires rebuilding the RAG index
-(delete `backend/data/chroma/`): vectors from different embedding models
-are not comparable.
+Choices persist (SQLite meta table) and survive restarts. A parsing model
+switch only affects newly indexed mail — already-parsed emails keep their
+cached results. To redo the current extraction window with the new model,
+use the drawer's **"re-parse recent emails"** button.
+
+The embedding model is the exception: it is set via `INBOX_EMBED_MODEL` in
+`backend/.env` (default `nomic-embed-text`), and changing it requires
+rebuilding the RAG index (delete `backend/data/chroma/` and restart):
+vectors from different embedding models are not comparable. There is
+deliberately no reindex-from-scratch button in the UI — nothing tunable
+there invalidates the embeddings.
 
 To compare candidate extraction models on your own mail before switching,
 run the benchmark (read-only, compares against the stored results and writes

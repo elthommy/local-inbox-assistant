@@ -19,6 +19,7 @@ vi.mock('../api.js', () => ({
     dismissEmail: vi.fn(),
     muteSender: vi.fn(),
     reindex: vi.fn(),
+    reextract: vi.fn(),
   },
   streamChat: vi.fn(),
 }))
@@ -27,9 +28,15 @@ const STATUS = {
   ollama: {
     up: true,
     url: 'http://localhost:11434',
-    chat_model: 'qwen3.6',
+    chat_model: 'qwen3:8b',
+    extraction_model: 'qwen3:8b',
     embed_model: 'nomic-embed-text',
     chat_model_pulled: true,
+    extraction_model_pulled: true,
+    models: [
+      { name: 'qwen3:8b', size: 5_200_000_000 },
+      { name: 'qwen3:4b', size: 2_600_000_000 },
+    ],
   },
   claude: { configured: false, implemented: false },
   index: {
@@ -362,7 +369,35 @@ describe('App', () => {
     await screen.findByText('Sarah Chen')
     const option = screen.getByRole('option', { name: /Claude \(cloud\) — coming soon/ })
     expect(option).toBeDisabled()
-    expect(screen.getByRole('option', { name: /qwen3\.6 · Ollama \(local\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /qwen3:8b · Ollama \(local\)/ })).toBeInTheDocument()
+  })
+
+  it('switches the chat model from the chat pane dropdown', async () => {
+    api.updateSettings.mockResolvedValue({
+      window_days: 90,
+      extraction_window_days: 14,
+      extraction_max_emails: 300,
+      chat_model: 'qwen3:4b',
+      extraction_model: 'qwen3:8b',
+    })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    // two "chat model" selects exist (chat pane + drawer); the pane comes first
+    await userEvent.selectOptions(screen.getAllByLabelText('chat model')[0], 'qwen3:4b')
+    expect(api.updateSettings).toHaveBeenCalledWith({ chat_model: 'qwen3:4b' })
+  })
+
+  it('switches the email parsing model and re-parses from the drawer', async () => {
+    api.reextract.mockResolvedValue({ started: true, reset: 42 })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    const select = screen.getByLabelText('email parsing model')
+    expect(within(select).getByRole('option', { name: 'qwen3:4b · 2.6 GB' })).toBeInTheDocument()
+    await userEvent.selectOptions(select, 'qwen3:4b')
+    expect(api.updateSettings).toHaveBeenCalledWith({ extraction_model: 'qwen3:4b' })
+    await userEvent.click(screen.getByText('re-parse recent emails'))
+    expect(api.reextract).toHaveBeenCalled()
   })
 
   it('sends a chat message and renders the streamed answer', async () => {
@@ -379,9 +414,9 @@ describe('App', () => {
     await userEvent.click(screen.getByText('send'))
     expect(await screen.findByText('what is urgent?')).toBeInTheDocument()
     expect(await screen.findByText("Rien d'urgent.")).toBeInTheDocument()
-    // assistant bubble label: "qwen3.6 · <time>" (the select option also
-    // contains "qwen3.6 ·", so scope to the label pattern with a time)
-    expect(screen.getByText(/^qwen3\.6 · \d/)).toBeInTheDocument()
+    // assistant bubble label: "qwen3:8b · <time>" (select options also start
+    // with "qwen3:8b ·", so require the hh:mm time pattern)
+    expect(screen.getByText(/^qwen3:8b · \d+:\d{2}/)).toBeInTheDocument()
   })
 
   it('renders assistant markdown as HTML, user text as plain text', async () => {

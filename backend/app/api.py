@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -61,12 +62,23 @@ def _model_pulled(model: str, pulled: list[str]) -> bool:
     return any(m == model or m.startswith(model + ":") for m in pulled)
 
 
+def _selectable(info: dict) -> bool:
+    """Whether a pulled model can be offered as a chat/extraction choice.
+
+    Embedding models can't chat; they are recognized by name ("embed") since
+    /api/tags does not expose capabilities.
+    """
+    name = info["name"]
+    return name != settings.embed_model and "embed" not in name
+
+
 @router.get("/status")
 async def status():
     """Health snapshot: Ollama reachability, Claude stub, index progress."""
     ollama = OllamaClient()
     ollama_up = await ollama.available()
-    models = await ollama.list_models() if ollama_up else []
+    models_info = await ollama.list_models_info() if ollama_up else []
+    models = [m["name"] for m in models_info]
     with get_conn() as conn:
         indexed = conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"]
         last_indexed = get_meta(conn, "last_indexed", "")
@@ -79,6 +91,7 @@ async def status():
             "embed_model": settings.embed_model,
             "chat_model_pulled": _model_pulled(settings.chat_model, models),
             "extraction_model_pulled": _model_pulled(settings.extraction_model, models),
+            "models": [m for m in models_info if _selectable(m)],
         },
         "claude": {
             "configured": ClaudeClient().configured(),
@@ -245,6 +258,8 @@ class SettingsUpdate(BaseModel):
     window_days: int | None = Field(default=None, ge=1, le=3650)
     extraction_window_days: int | None = Field(default=None, ge=1, le=3650)
     extraction_max_emails: int | None = Field(default=None, ge=1, le=10000)
+    chat_model: str | None = Field(default=None, min_length=1, max_length=200)
+    extraction_model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 @router.get("/settings")
@@ -272,6 +287,24 @@ async def reindex():
         return {"started": False, "progress": dict(indexer.progress)}
     asyncio.create_task(indexer.run_index())
     return {"started": True}
+
+
+@router.post("/reextract")
+async def reextract():
+    """Re-parse recent emails: clear cached extraction results inside the
+    extraction window and start a background run (e.g. after a model switch).
+    Dismissed emails and muted senders stay skipped by the extraction query."""
+    if indexer.progress["phase"] not in ("idle", "error"):
+        return {"started": False, "progress": dict(indexer.progress)}
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=settings.extraction_window_days)
+    ).isoformat()
+    with get_conn() as conn:
+        reset = conn.execute(
+            "UPDATE emails SET extracted = 0 WHERE date_utc >= ?", (cutoff,)
+        ).rowcount
+    asyncio.create_task(indexer.run_index())
+    return {"started": True, "reset": reset}
 
 
 class ChatRequest(BaseModel):

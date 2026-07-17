@@ -49,15 +49,20 @@ class TestStatus:
         async def up(self):
             return True
 
-        async def models(self):
-            return ["qwen3:8b", "nomic-embed-text:latest"]
+        async def models_info(self):
+            return [
+                {"name": "qwen3:8b", "size": 5_200_000_000},
+                {"name": "nomic-embed-text:latest", "size": 274_000_000},
+            ]
 
         monkeypatch.setattr(OllamaClient, "available", up)
-        monkeypatch.setattr(OllamaClient, "list_models", models)
+        monkeypatch.setattr(OllamaClient, "list_models_info", models_info)
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is True
         assert data["ollama"]["chat_model_pulled"] is True
         assert data["ollama"]["extraction_model_pulled"] is True
+        # embedding models are filtered out of the selectable list
+        assert data["ollama"]["models"] == [{"name": "qwen3:8b", "size": 5_200_000_000}]
         assert data["claude"] == {"configured": False, "implemented": False}
         assert data["index"]["emails"] == 0
         assert data["index"]["progress"]["phase"] in ("idle", "error")
@@ -71,6 +76,7 @@ class TestStatus:
         assert data["ollama"]["up"] is False
         assert data["ollama"]["chat_model_pulled"] is False
         assert data["ollama"]["extraction_model_pulled"] is False
+        assert data["ollama"]["models"] == []
 
 
 class TestStatsAndLists:
@@ -234,6 +240,8 @@ class TestSettings:
         "window_days": 90,
         "extraction_window_days": 14,
         "extraction_max_emails": 300,
+        "chat_model": "qwen3:8b",
+        "extraction_model": "qwen3:8b",
     }
 
     def _restore(self, monkeypatch):
@@ -271,6 +279,22 @@ class TestSettings:
             client.post("/api/settings", json={"extraction_max_emails": -5}).status_code
             == 422
         )
+        assert client.post("/api/settings", json={"chat_model": ""}).status_code == 422
+
+    def test_update_models_persists_and_applies(self, client, monkeypatch):
+        from app.db import apply_setting_overrides
+
+        settings = self._restore(monkeypatch)
+        r = client.post(
+            "/api/settings",
+            json={"chat_model": "gemma3:12b-it-qat", "extraction_model": "qwen3:4b"},
+        ).json()
+        assert r["chat_model"] == "gemma3:12b-it-qat"
+        assert r["extraction_model"] == "qwen3:4b"
+        assert settings.chat_model == "gemma3:12b-it-qat"  # applied immediately
+        settings.chat_model = "qwen3:8b"  # simulate a fresh process
+        apply_setting_overrides()
+        assert settings.chat_model == "gemma3:12b-it-qat"
 
 
 class TestReindex:
@@ -288,6 +312,32 @@ class TestReindex:
         data = client.post("/api/reindex").json()
         assert data["started"] is False
         assert data["progress"]["phase"] == "embedding"
+
+
+class TestReextract:
+    def test_reextract_resets_window_and_starts(self, client, monkeypatch):
+        from app.db import get_conn
+
+        seed(client)  # both seeded emails are inside the extraction window
+        started = []
+
+        async def fake_run():
+            started.append(True)
+
+        monkeypatch.setattr(api_module.indexer, "run_index", fake_run)
+        data = client.post("/api/reextract").json()
+        assert data["started"] is True
+        assert data["reset"] == 2
+        with get_conn() as conn:
+            flags = [
+                r["extracted"] for r in conn.execute("SELECT extracted FROM emails")
+            ]
+        assert flags == [0, 0]
+
+    def test_reextract_refused_while_running(self, client, monkeypatch):
+        monkeypatch.setitem(api_module.indexer.progress, "phase", "extracting")
+        data = client.post("/api/reextract").json()
+        assert data["started"] is False
 
 
 class TestChat:
