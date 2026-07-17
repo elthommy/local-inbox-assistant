@@ -78,18 +78,22 @@ def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-async def extract_email(ollama: OllamaClient, row: sqlite3.Row) -> dict:
-    """Ask the LLM for priority/tasks/events of one email, as schema-bound JSON."""
-    user_msg = (
+def build_user_msg(row: sqlite3.Row) -> str:
+    """Format one email row as the user message of the extraction prompt."""
+    return (
         f"From: {row['sender']} <{row['sender_email']}>\n"
         f"Subject: {row['subject']}\n"
         f"Date: {row['date_utc']}\n\n"
         f"{row['body'][:4000]}"
     )
+
+
+async def extract_email(ollama: OllamaClient, row: sqlite3.Row) -> dict:
+    """Ask the LLM for priority/tasks/events of one email, as schema-bound JSON."""
     return await ollama.chat_json(
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
+            {"role": "user", "content": build_user_msg(row)},
         ],
         schema=EXTRACTION_SCHEMA,
     )
