@@ -136,6 +136,7 @@ TUNABLE_SETTINGS = {
     "extraction_max_emails": int,
     "chat_model": str,
     "extraction_model": str,
+    "chat_provider": str,
 }
 
 

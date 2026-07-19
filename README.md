@@ -6,9 +6,11 @@ about your mail with a local Ollama
 model over a RAG index, extracts tasks / events / priority from recent emails,
 and exposes the same data to other AI tools through an MCP server.
 
-Nothing leaves your machine: parsing, embeddings (ChromaDB + `nomic-embed-text`),
-and chat all run locally. Claude cloud support is planned as a second step —
-the UI shows it as "coming soon".
+By default nothing leaves your machine: parsing, embeddings (ChromaDB +
+`nomic-embed-text`), and chat all run locally. Optionally, chat can run on
+Claude (Anthropic API) instead of the local model — an explicit opt-in per
+conversation; see [Using Claude for chat](#using-claude-for-chat-optional).
+Indexing, extraction, and embeddings always stay local.
 
 ## Architecture
 
@@ -36,7 +38,22 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
   - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
-- A Thunderbird profile storing mail in maildir format
+- A Thunderbird profile storing mail in **maildir** format (one `.eml` file
+  per message) — see the limitation below
+- Optional: an Anthropic API key, if you want chat answers from Claude
+  instead of the local model
+
+### Limitation: maildir (`.eml`) only, no mbox
+
+The indexer only reads maildir-style storage: one message per `.eml` file.
+Thunderbird's **default** storage format, mbox (one big file per folder, no
+extension), is **not supported** — folders stored as mbox are silently
+invisible to the scanner. In Thunderbird, check **Account Settings → Server
+Settings → Message Storage → Message Store Type**: it must say "File per
+message (maildir)". The setting only applies to newly created accounts, so an
+existing mbox account must be re-created (or synced into a maildir profile)
+to be indexed. Other mail clients work too as long as they store one message
+per `.eml` file under a common root.
 
 ## Run
 
@@ -102,6 +119,24 @@ vectors from different embedding models are not comparable. There is
 deliberately no reindex-from-scratch button in the UI — nothing tunable
 there invalidates the embeddings.
 
+### Using Claude for chat (optional)
+
+With an Anthropic API key configured (`INBOX_ANTHROPIC_API_KEY` in the
+environment, the root `.env`, or `backend/.env`), the chat dropdown gains a
+**Claude (cloud)** entry next to the local Ollama models. Selecting it routes
+chat answers through the Anthropic API; the choice persists like any other
+model choice, and switching back to a local model is one click.
+
+What leaves the machine when Claude is selected: the chat conversation and
+the context embedded in its prompt — the retrieved email excerpts, the
+task/event lists, and the pinned email when using "summarize". Retrieval
+(embeddings), indexing, and the task/event/priority extraction pass always
+run locally, whichever chat backend is selected. Without a key, everything
+is local and the Claude option stays disabled.
+
+The Claude model defaults to `claude-opus-4-8` and can be overridden with
+`INBOX_CLAUDE_MODEL` in `backend/.env`.
+
 To compare candidate extraction models on your own mail before switching,
 run the benchmark (read-only, compares against the stored results and writes
 `backend/data/benchmark/summary.csv` + `disagreements.md`):
@@ -136,9 +171,9 @@ MCP server**.
 
 ## Testing
 
-Backend — **pytest** (99 tests, ~1 s). Everything runs against temporary
-maildirs/DBs with all Ollama traffic faked (`respx` / monkeypatching) — the
-real mailbox, index, and network are never touched:
+Backend — **pytest** (186 tests, ~2 s). Everything runs against temporary
+maildirs/DBs with all Ollama and Anthropic traffic faked (`respx` /
+monkeypatching) — the real mailbox, index, and network are never touched:
 
 ```bash
 cd backend
@@ -154,13 +189,13 @@ uv run pytest -v tests/test_parser.py   # a single file, verbose
 | `tests/test_rag_store.py` | Chroma store: index/search roundtrip, idempotent upsert, deletes, empty index, and `search_emails` per-email dedup/caps |
 | `tests/test_db.py` | schema idempotence, meta upsert, maildir-file uniqueness, task/event cascade delete |
 | `tests/test_extract.py` | extraction window/limit selection, storing priority/tasks/events, invalid-priority coercion, blank-item skipping, 5-item caps + truncation, re-run replacement, failure marking |
-| `tests/test_chat.py` | RAG prompt building: context vs no-context system prompts, excerpt/task/event injection, done-task exclusion, 12-message history cap, stream orchestration |
+| `tests/test_chat.py` | RAG prompt building: context vs no-context system prompts, excerpt/task/event injection, done-task exclusion, 12-message history cap, stream orchestration, provider routing (Ollama vs Claude, fail-fast when unconfigured) |
 | `tests/test_ollama_client.py` | Ollama HTTP client (mocked with respx): availability, model list, token streaming, `think:false` only for thinking-capable models (cached probe), JSON mode with schema, embeddings, error surfacing |
-| `tests/test_claude_placeholder.py` | the step-2 Claude stub: unavailable, key detection, explicit NotImplementedError |
+| `tests/test_claude.py` | Claude provider (SDK faked): key detection, system-prompt splitting, streamed chunks, request shape (model/thinking), auth-error mapping, unconfigured raise |
 | `tests/test_indexer.py` | full pipeline on synthetic maildirs: parse→embed→extract, incremental re-runs (one extraction per email ever), duplicate insert skip, cross-folder Message-ID dedup (Gmail label copies), relative-path storage, per-email parse/extract failure tolerance, error phase reporting, `do_extract=False` |
-| `tests/test_api.py` | FastAPI routes via TestClient: `/status` (ollama up/down), `/stats`, email list/filter/detail/404, tasks with toggle roundtrip + 404, events, reindex start/refusal-while-running, chat validation (400), Claude SSE error event, SSE token stream + done, mid-stream failure error event |
+| `tests/test_api.py` | FastAPI routes via TestClient: `/status` (ollama up/down, claude configured), `/stats`, email list/filter/detail/404, tasks with toggle roundtrip + 404, events, reindex start/refusal-while-running, chat validation (400/422), provider forwarding, Claude-without-key SSE error event, SSE token stream + done, mid-stream failure error event |
 
-Frontend — **Vitest + React Testing Library** (35 tests, jsdom). Vitest is the
+Frontend — **Vitest + React Testing Library** (86 tests, jsdom). Vitest is the
 Vite-native unit-test runner; Playwright would be the tool for full-browser
 end-to-end tests and could be added later on top of these:
 
@@ -173,7 +208,7 @@ npm run test:watch       # watch mode
 |------|--------|
 | `src/test/utils.test.js` | pure helpers: priority dot colors (incl. not-yet-extracted), deterministic avatar palette, today/yesterday/older email times, relative "last indexed" times, event date chips incl. the French `dd/mm/yyyy` regression and unparseable fallback |
 | `src/test/api.test.js` | API client: endpoint paths/methods, HTTP error propagation, SSE streaming (token order, frames split across network chunks, `done` termination, `error` events thrown, no tokens after error, exact request payload) |
-| `src/test/App.test.jsx` | dashboard behavior with a mocked API: live header status (ollama up/down, claude "soon"), stat tiles, filter switching + correct queries, email expansion with task/event chips, task toggle calling the API, event date chips, settings drawer (real index numbers, MCP register command, Claude placeholder), disabled Claude model option, chat send → streamed answer rendering, chat error bubbles, backend-unreachable banner, indexing progress display |
+| `src/test/App.test.jsx` | dashboard behavior with a mocked API: live header status (ollama up/down, claude key/no-key), stat tiles, filter switching + correct queries, email expansion with task/event chips, task toggle calling the API, event date chips, settings drawer (real index numbers, MCP register command, Claude connection card), Claude option disabled without key / selectable with key, chat routed to the selected provider, chat send → streamed answer rendering, chat error bubbles, backend-unreachable banner, indexing progress display |
 
 ## Notes
 
@@ -185,8 +220,11 @@ npm run test:watch       # watch mode
   used instead.
 - **Data** lives in `backend/data/` (SQLite + ChromaDB); delete the folder to
   rebuild from scratch.
-- **Claude (step 2)**: `backend/app/llm/claude.py` is the placeholder provider;
-  the settings drawer and model dropdown already reserve the UI slots.
+- **mbox is not supported**: only maildir-style `.eml` files are indexed (see
+  the limitation under Requirements).
+- **Claude** (`backend/app/llm/claude.py`) is chat-only and opt-in: it is
+  used exclusively when selected in the chat dropdown, and never for
+  indexing, embeddings, or extraction.
 
 ## License
 

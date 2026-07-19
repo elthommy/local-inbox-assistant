@@ -28,8 +28,12 @@ class Settings(BaseSettings):
     extraction_model: str = "qwen3:8b"
     embed_model: str = "nomic-embed-text"
 
-    # Claude cloud support is a later step; key is read but unused for now.
+    # Claude cloud chat (opt-in): with a key set, "Claude" becomes selectable
+    # in the chat dropdown. Extraction and embeddings always stay local.
     anthropic_api_key: str = ""
+    claude_model: str = "claude-opus-4-8"
+    # Which backend answers chat: "ollama" (local) or "claude" (cloud).
+    chat_provider: str = "ollama"
 
     db_path: Path = DATA_DIR / "inbox.db"
     chroma_path: Path = DATA_DIR / "chroma"

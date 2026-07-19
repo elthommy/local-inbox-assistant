@@ -9,6 +9,7 @@ from datetime import datetime
 from . import rag
 from .config import settings
 from .db import get_conn, triage_filter
+from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
 from .llm.ollama import OllamaClient
 
 SYSTEM_NO_CONTEXT = """\
@@ -145,10 +146,21 @@ async def build_messages(
 
 
 async def stream_answer(
-    history: list[dict], use_context: bool, email_id: int | None = None
+    history: list[dict],
+    use_context: bool,
+    email_id: int | None = None,
+    provider: str = "ollama",
 ) -> AsyncIterator[str]:
-    """Stream the model's answer to the last user message in history."""
+    """Stream the answer from the selected chat provider ("ollama" or
+    "claude"). RAG retrieval always runs locally through Ollama embeddings."""
     ollama = OllamaClient()
+    if provider == "claude":
+        llm = ClaudeClient()
+        if not llm.configured():
+            # fail before doing any retrieval work
+            raise RuntimeError(NOT_CONFIGURED_MESSAGE)
+    else:
+        llm = ollama
     messages = await build_messages(ollama, history, use_context, email_id)
-    async for chunk in ollama.chat_stream(messages):
+    async for chunk in llm.chat_stream(messages):
         yield chunk

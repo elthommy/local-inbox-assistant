@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 
 import app.api as api_module
 import app.main as main_module
+from app.config import settings
 from app.llm.ollama import OllamaClient
 
 
@@ -57,13 +58,15 @@ class TestStatus:
 
         monkeypatch.setattr(OllamaClient, "available", up)
         monkeypatch.setattr(OllamaClient, "list_models_info", models_info)
+        monkeypatch.setattr(settings, "anthropic_api_key", "")
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is True
         assert data["ollama"]["chat_model_pulled"] is True
         assert data["ollama"]["extraction_model_pulled"] is True
         # embedding models are filtered out of the selectable list
         assert data["ollama"]["models"] == [{"name": "qwen3:8b", "size": 5_200_000_000}]
-        assert data["claude"] == {"configured": False, "implemented": False}
+        assert data["claude"] == {"configured": False, "model": settings.claude_model}
+        assert data["chat_provider"] == "ollama"
         assert data["index"]["emails"] == 0
         assert data["index"]["progress"]["phase"] in ("idle", "error")
 
@@ -302,6 +305,7 @@ class TestSettings:
         "extraction_max_emails": 300,
         "chat_model": "qwen3:8b",
         "extraction_model": "qwen3:8b",
+        "chat_provider": "ollama",
     }
 
     def _restore(self, monkeypatch):
@@ -340,6 +344,10 @@ class TestSettings:
             == 422
         )
         assert client.post("/api/settings", json={"chat_model": ""}).status_code == 422
+        assert (
+            client.post("/api/settings", json={"chat_provider": "gpt"}).status_code
+            == 422
+        )
 
     def test_update_models_persists_and_applies(self, client, monkeypatch):
         from app.db import apply_setting_overrides
@@ -355,6 +363,16 @@ class TestSettings:
         settings.chat_model = "qwen3:8b"  # simulate a fresh process
         apply_setting_overrides()
         assert settings.chat_model == "gemma3:12b-it-qat"
+
+    def test_update_chat_provider_persists(self, client, monkeypatch):
+        from app.db import apply_setting_overrides
+
+        settings = self._restore(monkeypatch)
+        r = client.post("/api/settings", json={"chat_provider": "claude"}).json()
+        assert r["chat_provider"] == "claude"
+        settings.chat_provider = "ollama"  # simulate a fresh process
+        apply_setting_overrides()
+        assert settings.chat_provider == "claude"
 
 
 class TestReindex:
@@ -413,19 +431,43 @@ class TestChat:
         )
         assert r.status_code == 400
 
-    def test_claude_returns_error_event(self, client):
+    def test_claude_without_key_returns_error_event(self, client, monkeypatch):
+        monkeypatch.setattr(settings, "anthropic_api_key", "")
         r = client.post(
             "/api/chat",
             json={"messages": [{"role": "user", "content": "hi"}], "model": "claude"},
         )
         assert r.status_code == 200
         assert "event: error" in r.text
-        assert "not implemented yet" in r.text
+        assert "not configured" in r.text
+
+    def test_rejects_unknown_model(self, client):
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "gpt"},
+        )
+        assert r.status_code == 422
+
+    def test_model_forwarded_as_provider(self, client, monkeypatch):
+        seen = {}
+
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
+            seen["provider"] = provider
+            yield "ok"
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "claude"},
+        )
+        assert "event: done" in r.text
+        assert seen["provider"] == "claude"
 
     def test_streams_tokens_then_done(self, client, monkeypatch):
-        async def fake_answer(history, use_context, email_id=None):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
             assert use_context is True
             assert email_id is None
+            assert provider == "ollama"
             yield "Hello "
             yield "you"
 
@@ -446,7 +488,7 @@ class TestChat:
     def test_email_id_forwarded_to_stream_answer(self, client, monkeypatch):
         seen = {}
 
-        async def fake_answer(history, use_context, email_id=None):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
             seen["email_id"] = email_id
             yield "ok"
 
@@ -459,7 +501,7 @@ class TestChat:
         assert seen["email_id"] == 7
 
     def test_stream_failure_emits_error_event(self, client, monkeypatch):
-        async def broken(history, use_context, email_id=None):
+        async def broken(history, use_context, email_id=None, provider="ollama"):
             yield "partial"
             raise RuntimeError("ollama died")
 

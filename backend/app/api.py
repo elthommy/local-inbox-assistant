@@ -13,7 +13,7 @@ from . import indexer, rag
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .chat import stream_answer
 from .config import settings
-from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
+from .llm.claude import ClaudeClient
 from .llm.ollama import OllamaClient
 from .mail.render import render_email
 
@@ -96,8 +96,9 @@ async def status():
         },
         "claude": {
             "configured": ClaudeClient().configured(),
-            "implemented": False,  # cloud support lands in a later step
+            "model": settings.claude_model,
         },
+        "chat_provider": settings.chat_provider,
         "index": {
             "emails": indexed,
             "chunks": rag.chunk_count(),
@@ -292,6 +293,7 @@ class SettingsUpdate(BaseModel):
     extraction_max_emails: int | None = Field(default=None, ge=1, le=10000)
     chat_model: str | None = Field(default=None, min_length=1, max_length=200)
     extraction_model: str | None = Field(default=None, min_length=1, max_length=200)
+    chat_provider: str | None = Field(default=None, pattern="^(ollama|claude)$")
 
 
 @router.get("/settings")
@@ -341,7 +343,7 @@ async def reextract():
 
 class ChatRequest(BaseModel):
     messages: list[dict]  # [{role, content}], last one is the new user message
-    model: str = "ollama"
+    model: str = Field(default="ollama", pattern="^(ollama|claude)$")
     use_context: bool = True
     # pins this email's full text into the chat context ("summarize" button)
     email_id: int | None = None
@@ -355,12 +357,9 @@ async def chat(req: ChatRequest):
 
     async def sse():
         """Yield the answer as SSE frames, converting failures to error events."""
-        if req.model == "claude":
-            yield f"event: error\ndata: {json.dumps({'message': NOT_CONFIGURED_MESSAGE})}\n\n"
-            return
         try:
             async for chunk in stream_answer(
-                req.messages, req.use_context, req.email_id
+                req.messages, req.use_context, req.email_id, provider=req.model
             ):
                 yield f"data: {json.dumps({'token': chunk})}\n\n"
             yield "event: done\ndata: {}\n\n"

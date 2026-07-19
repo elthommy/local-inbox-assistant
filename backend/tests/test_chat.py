@@ -1,5 +1,9 @@
+import pytest
+
 from app import chat, rag
+from app.config import settings
 from app.db import get_conn
+from app.llm.claude import ClaudeClient
 from app.llm.ollama import OllamaClient
 
 
@@ -161,3 +165,34 @@ async def test_stream_answer_yields_model_chunks(monkeypatch):
         c async for c in chat.stream_answer([{"role": "user", "content": "hi"}], False)
     ]
     assert out == ["Hello ", "world"]
+
+
+async def test_stream_answer_routes_to_claude(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+
+    async def fake_claude_stream(self, messages):
+        assert messages[0]["role"] == "system"
+        yield "from claude"
+
+    monkeypatch.setattr(ClaudeClient, "chat_stream", fake_claude_stream)
+    out = [
+        c
+        async for c in chat.stream_answer(
+            [{"role": "user", "content": "hi"}], False, provider="claude"
+        )
+    ]
+    assert out == ["from claude"]
+
+
+async def test_stream_answer_claude_unconfigured_fails_fast(monkeypatch):
+    monkeypatch.setattr(settings, "anthropic_api_key", "")
+
+    async def no_search(*a, **kw):
+        raise AssertionError("retrieval must not run when Claude is unconfigured")
+
+    monkeypatch.setattr(rag, "search_emails", no_search)
+    with pytest.raises(RuntimeError, match="not configured"):
+        async for _ in chat.stream_answer(
+            [{"role": "user", "content": "hi"}], True, provider="claude"
+        ):
+            pass

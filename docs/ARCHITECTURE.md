@@ -1,7 +1,14 @@
 # Architecture
 
-Everything runs locally: mail is read from the Thunderbird maildir on disk,
-models run on Ollama, and all state lives in `backend/data/`.
+Everything runs locally by default: mail is read from the Thunderbird maildir
+on disk, models run on Ollama, and all state lives in `backend/data/`. The one
+optional cloud path is chat: with an Anthropic API key configured, the user
+can pick Claude instead of the local model in the chat dropdown — indexing,
+extraction, and embeddings never leave the machine either way.
+
+Mailbox format: only maildir-style storage is read — one message per `.eml`
+file. Thunderbird's default mbox format (one big file per folder) is not
+supported; see the limitation note in the README.
 
 ## Components
 
@@ -19,7 +26,8 @@ flowchart LR
         CHAT["chat.py<br>RAG orchestration"]
     end
 
-    OL["Ollama<br>qwen3.6 + nomic-embed-text"]
+    OL["Ollama<br>chat/extraction models + nomic-embed-text"]
+    CL["Claude API<br>(optional, chat only)"]
     UI["React dashboard<br>(Vite, port 5173)"]
     MCP["mcp_server.py<br>localmail MCP (stdio)"]
 
@@ -32,6 +40,7 @@ flowchart LR
     CHAT --> DB
     CHAT --> CH
     CHAT <--> OL
+    CHAT -.-> CL
     UI <--> API
     MCP --> DB
     MCP --> CH
@@ -121,8 +130,9 @@ sequenceDiagram
     participant Chroma as ChromaDB
     participant DB as SQLite
     participant Ollama
+    participant Claude as Claude API (cloud)
 
-    UI->>API: messages, use_context, email_id?
+    UI->>API: messages, model (ollama|claude), use_context, email_id?
     API->>Chat: stream_answer()
     alt inbox context on
         Chat->>Ollama: embed(last user message)
@@ -132,10 +142,18 @@ sequenceDiagram
     opt email pinned ("summarize")
         Chat->>DB: full body of that email
     end
-    Chat->>Ollama: chat_stream(system prompt + history)
-    loop tokens
-        Ollama-->>Chat: chunk
-        Chat-->>UI: SSE data: {token}
+    alt Claude selected (opt-in)
+        Chat->>Claude: messages.stream(system prompt + history)
+        loop tokens
+            Claude-->>Chat: chunk
+            Chat-->>UI: SSE data: {token}
+        end
+    else local model (default)
+        Chat->>Ollama: chat_stream(system prompt + history)
+        loop tokens
+            Ollama-->>Chat: chunk
+            Chat-->>UI: SSE data: {token}
+        end
     end
     Chat-->>UI: SSE event: done
 ```
@@ -144,6 +162,13 @@ The system prompt embeds the retrieved excerpts, the open task/event lists,
 and — when the user pinned an email via the summarize button — that email's
 full text. Answers stream token-by-token over SSE and are rendered as
 Markdown in the chat panel.
+
+The answering model is the user's persisted `chat_provider` choice: Ollama
+(default) or Claude (`app/llm/claude.py`, enabled by
+`INBOX_ANTHROPIC_API_KEY`). Retrieval always embeds through local Ollama —
+when Claude is selected, what reaches the cloud is the assembled prompt of
+that conversation: the question/history, retrieved excerpts, task/event
+lists, and the pinned email if any.
 
 ## Data stores
 

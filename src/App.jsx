@@ -55,7 +55,7 @@ function StatusDot({ color, label, glow = true }) {
   )
 }
 
-function Header({ ollamaUp, onOpenSettings }) {
+function Header({ ollamaUp, claudeConfigured, onOpenSettings }) {
   return (
     <div
       style={{
@@ -75,7 +75,11 @@ function Header({ ollamaUp, onOpenSettings }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
         <StatusDot color={ollamaUp ? '#4ADE80' : '#F87171'} label={ollamaUp ? 'ollama · local' : 'ollama · offline'} />
-        <StatusDot color="#3a4048" glow={false} label="claude · soon" />
+        <StatusDot
+          color={claudeConfigured ? '#4ADE80' : '#3a4048'}
+          glow={claudeConfigured}
+          label={claudeConfigured ? 'claude · cloud' : 'claude · no key'}
+        />
         <button
           className="settings-btn"
           onClick={onOpenSettings}
@@ -100,10 +104,12 @@ function Header({ ollamaUp, onOpenSettings }) {
   )
 }
 
-function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
+function ChatPane({ chatModel, models, provider, claudeConfigured, claudeModel, onChatModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
   // the configured model may not be in the pulled list (Ollama down / model
   // removed): keep it selectable so the dropdown never shows a wrong value
   const modelOptions = models.some((m) => m.name === chatModel) ? models : [{ name: chatModel }, ...models]
+  const selectValue = provider === 'claude' ? 'claude' : chatModel
+  const activeModel = provider === 'claude' ? claudeModel : chatModel
   const scrollRef = useRef(null)
   useEffect(() => {
     const el = scrollRef.current
@@ -125,7 +131,7 @@ function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleCont
         }}
       >
         <select
-          value={chatModel}
+          value={selectValue}
           aria-label="chat model"
           onChange={onChatModelChange}
           style={{
@@ -146,8 +152,8 @@ function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleCont
               {m.name} · Ollama (local)
             </option>
           ))}
-          <option value="claude" disabled>
-            Claude (cloud) — coming soon
+          <option value="claude" disabled={!claudeConfigured}>
+            {claudeConfigured ? `${claudeModel} · Claude (cloud)` : 'Claude (cloud) — no API key'}
           </option>
         </select>
         <div
@@ -223,7 +229,7 @@ function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleCont
         })}
         {isTyping && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', padding: '0 2px' }}>{chatModel}</span>
+            <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', padding: '0 2px' }}>{activeModel}</span>
             <div
               style={{
                 background: '#161a20',
@@ -891,15 +897,24 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
                   </span>
                 )}
               </div>
-              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', opacity: 0.6 }}>
+              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', opacity: status?.claude?.configured ? 1 : 0.6 }}>
                 <div>
                   <div style={{ fontSize: 12.5, color: '#e2e5ea' }}>Claude · api.anthropic.com</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>cloud support — planned (step 2)</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
+                    {status?.claude?.configured ? `${status.claude.model} — chat only, opt-in per conversation` : 'set INBOX_ANTHROPIC_API_KEY to enable cloud chat'}
+                  </div>
                 </div>
-                <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3a4048' }} />
-                  soon
-                </span>
+                {status?.claude?.configured ? (
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#4ADE80', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ADE80' }} />
+                    key set
+                  </span>
+                ) : (
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3a4048' }} />
+                    no key
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1196,6 +1211,11 @@ export default function App() {
   const chatModel = status?.ollama?.chat_model || 'ollama'
   const models = status?.ollama?.models ?? []
   const indexedCount = status?.index?.emails ?? 0
+  const claudeConfigured = status?.claude?.configured ?? false
+  const claudeModel = status?.claude?.model || 'claude'
+  // a persisted "claude" choice degrades to ollama if the key was removed
+  const chatProvider = status?.chat_provider === 'claude' && claudeConfigured ? 'claude' : 'ollama'
+  const activeChatModel = chatProvider === 'claude' ? claudeModel : chatModel
 
   // shared by the chat input and the per-email "summarize" button: append the
   // user message and stream the assistant reply, optionally pinning an email
@@ -1210,7 +1230,7 @@ export default function App() {
       await streamChat(
         {
           messages: history.filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text })),
-          model: 'ollama',
+          model: chatProvider,
           useContext,
           emailId,
         },
@@ -1218,7 +1238,7 @@ export default function App() {
           if (!started) {
             started = true
             setIsTyping(false)
-            setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', model: chatModel, text: token, time: nowTime() }])
+            setMessages((prev) => [...prev, { id: assistantId, role: 'assistant', model: activeChatModel, text: token, time: nowTime() }])
           } else {
             setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, text: m.text + token } : m)))
           }
@@ -1339,7 +1359,7 @@ export default function App() {
       const saved = await api.updateSettings(values)
       setTunables(saved)
       // model choices are displayed from /status (chat header, drawer): refresh
-      if (values.chat_model || values.extraction_model) setStatus(await api.status())
+      if (values.chat_model || values.extraction_model || values.chat_provider) setStatus(await api.status())
     } catch {
       /* leave the draft as-is; the drawer keeps showing unsaved values */
     }
@@ -1407,14 +1427,19 @@ export default function App() {
         position: 'relative',
       }}
     >
-      <Header ollamaUp={status?.ollama?.up ?? false} onOpenSettings={() => setSettingsOpen(true)} />
+      <Header ollamaUp={status?.ollama?.up ?? false} claudeConfigured={claudeConfigured} onOpenSettings={() => setSettingsOpen(true)} />
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <ChatPane
           chatModel={chatModel}
           models={models}
+          provider={chatProvider}
+          claudeConfigured={claudeConfigured}
+          claudeModel={claudeModel}
           onChatModelChange={(e) => {
-            if (e.target.value !== 'claude') saveSettings({ chat_model: e.target.value })
+            const value = e.target.value
+            if (value === 'claude') saveSettings({ chat_provider: 'claude' })
+            else saveSettings({ chat_provider: 'ollama', chat_model: value })
           }}
           useContext={useContext}
           toggleContext={() => setUseContext((v) => !v)}

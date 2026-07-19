@@ -39,7 +39,8 @@ const STATUS = {
       { name: 'qwen3:4b', size: 2_600_000_000 },
     ],
   },
-  claude: { configured: false, implemented: false },
+  claude: { configured: false, model: 'claude-opus-4-8' },
+  chat_provider: 'ollama',
   index: {
     emails: 2106,
     chunks: 8600,
@@ -111,7 +112,7 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByText('▍local-inbox-assistant')).toBeInTheDocument()
     expect(await screen.findByText('ollama · local')).toBeInTheDocument()
-    expect(screen.getByText('claude · soon')).toBeInTheDocument()
+    expect(screen.getByText('claude · no key')).toBeInTheDocument()
     expect(await screen.findByText('inbox context · 2,106')).toBeInTheDocument()
   })
 
@@ -383,7 +384,7 @@ describe('App', () => {
     expect(screen.getByText('MCP / RAG settings')).toBeInTheDocument()
     expect(screen.getByText(/Ollama · localhost:11434/)).toBeInTheDocument()
     expect(screen.getByText('online')).toBeInTheDocument()
-    expect(screen.getByText(/cloud support — planned \(step 2\)/)).toBeInTheDocument()
+    expect(screen.getByText(/set INBOX_ANTHROPIC_API_KEY to enable cloud chat/)).toBeInTheDocument()
     expect(screen.getByText(/8,600 chunks · last indexed just now/)).toBeInTheDocument()
     expect(
       screen.getByText('claude mcp add localmail -- uv --directory /home/user/project/backend run python mcp_server.py'),
@@ -419,12 +420,38 @@ describe('App', () => {
     expect(api.updateSettings).not.toHaveBeenCalled()
   })
 
-  it('disables the Claude model option', async () => {
+  it('disables the Claude model option without an API key', async () => {
     render(<App />)
     await screen.findByText('Sarah Chen')
-    const option = screen.getByRole('option', { name: /Claude \(cloud\) — coming soon/ })
+    const option = screen.getByRole('option', { name: /Claude \(cloud\) — no API key/ })
     expect(option).toBeDisabled()
     expect(screen.getByRole('option', { name: /qwen3:8b · Ollama \(local\)/ })).toBeInTheDocument()
+  })
+
+  it('enables Claude when a key is configured and selects it', async () => {
+    api.status.mockResolvedValue({ ...STATUS, claude: { configured: true, model: 'claude-opus-4-8' } })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    expect(screen.getByText('claude · cloud')).toBeInTheDocument()
+    const option = screen.getByRole('option', { name: /claude-opus-4-8 · Claude \(cloud\)/ })
+    expect(option).not.toBeDisabled()
+    await userEvent.selectOptions(screen.getAllByLabelText('chat model')[0], 'claude')
+    expect(api.updateSettings).toHaveBeenCalledWith({ chat_provider: 'claude' })
+  })
+
+  it('sends chat to Claude when it is the selected provider', async () => {
+    api.status.mockResolvedValue({ ...STATUS, claude: { configured: true, model: 'claude-opus-4-8' }, chat_provider: 'claude' })
+    streamChat.mockImplementation(async ({ model }, onToken) => {
+      expect(model).toBe('claude')
+      onToken('Bonjour.')
+    })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.type(screen.getByPlaceholderText('Ask about your inbox…'), 'hello')
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByText('Bonjour.')).toBeInTheDocument()
+    // the answer is labeled with the Claude model, not the Ollama one
+    expect(screen.getByText(/claude-opus-4-8 · \d/)).toBeInTheDocument()
   })
 
   it('switches the chat model from the chat pane dropdown', async () => {
@@ -439,7 +466,7 @@ describe('App', () => {
     await screen.findByText('Sarah Chen')
     // two "chat model" selects exist (chat pane + drawer); the pane comes first
     await userEvent.selectOptions(screen.getAllByLabelText('chat model')[0], 'qwen3:4b')
-    expect(api.updateSettings).toHaveBeenCalledWith({ chat_model: 'qwen3:4b' })
+    expect(api.updateSettings).toHaveBeenCalledWith({ chat_provider: 'ollama', chat_model: 'qwen3:4b' })
   })
 
   it('switches the email parsing model and re-parses from the drawer', async () => {
