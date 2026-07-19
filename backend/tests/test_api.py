@@ -111,6 +111,66 @@ class TestStatsAndLists:
     def test_email_detail_404(self, client):
         assert client.get("/api/emails/999").status_code == 404
 
+    def test_email_body_markdown_from_source_eml(self, client):
+        eid = seed(client)
+        from app.config import settings
+
+        (settings.maildir / "a.eml").write_bytes(
+            b"From: sarah@x.com\nSubject: Q3 report\n"
+            b"Date: Fri, 10 Jul 2026 00:00:00 +0000\n"
+            b"Content-Type: text/html; charset=utf-8\n\n"
+            b"<h1>Q3</h1><p>numbers look <b>good</b></p>"
+            b'<img src="https://t.example.com/p.gif">'
+        )
+        data = client.get(f"/api/emails/{eid}/body").json()
+        assert data["format"] == "markdown"
+        assert data["degraded"] is False
+        assert "# Q3" in data["body"]
+        assert "**good**" in data["body"]
+        assert "t.example.com" not in data["body"]  # images stripped
+
+    def test_email_body_falls_back_to_stored_text(self, client):
+        # source .eml missing (or plain text): the stored body is returned
+        eid = seed(client)
+        data = client.get(f"/api/emails/{eid}/body").json()
+        assert data == {
+            "id": eid,
+            "format": "text",
+            "body": "full body",
+            "degraded": False,
+        }
+
+    def test_email_body_degraded_falls_back_unless_forced(self, client):
+        eid = seed(client)
+        from app.config import settings
+
+        # wall of tracking links: the degradation heuristic trips
+        links = "".join(
+            f'<a href="https://t.x.com/c?id={i}&tok=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">Shop</a> '
+            for i in range(10)
+        )
+        (settings.maildir / "a.eml").write_bytes(
+            b"From: sarah@x.com\nSubject: Q3 report\n"
+            b"Date: Fri, 10 Jul 2026 00:00:00 +0000\n"
+            b"Content-Type: text/html; charset=utf-8\n\n"
+            b"<p>" + links.encode() + b"</p>"
+        )
+        data = client.get(f"/api/emails/{eid}/body").json()
+        assert data == {
+            "id": eid,
+            "format": "text",
+            "body": "full body",
+            "degraded": True,
+        }
+        # the "render anyway" override returns the markdown after all
+        forced = client.get(f"/api/emails/{eid}/body?force_markdown=true").json()
+        assert forced["format"] == "markdown"
+        assert forced["degraded"] is True
+        assert "[Shop](https://t.x.com" in forced["body"]
+
+    def test_email_body_404(self, client):
+        assert client.get("/api/emails/999/body").status_code == 404
+
     def test_tasks_include_source(self, client):
         eid = seed(client)
         data = client.get("/api/tasks").json()

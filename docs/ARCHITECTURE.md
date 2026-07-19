@@ -78,6 +78,39 @@ applies `triage_filter()`: dismissed emails and muted senders are excluded.
 Plain mail listing ("all") and semantic search are not filtered — flagged
 mail stays visible there, dimmed, with undo.
 
+## Email reading view
+
+Expanding an email in the UI calls `GET /api/emails/{id}/body`
+(`mail/render.py`). The DB only stores extracted plain text, so the
+endpoint re-opens the source `.eml` (path recovered from the stored
+`maildir_file`) and converts its HTML part to Markdown with `markdownify`
+— which works for already-indexed mail without any re-index. Safety
+measures: images are stripped server-side (loading them would fire
+tracking pixels), `script`/`style`/`head` never reach the output, the
+frontend renders through `react-markdown` (raw HTML is escaped, no XSS
+path), disallows `img` again client-side, and forces links to open in a
+new tab with `rel="noopener noreferrer"`.
+
+### Degradation heuristic
+
+Marketing emails built from nested layout tables convert into walls of
+tracking links and pipe tables. Instead of guessing from sender headers
+(bulk mail can render fine), the converted *output* is scored; the
+rendering is flagged degraded when any signal trips:
+
+| Signal | Meaning | Threshold |
+|---|---|---|
+| link density | fraction of the markdown occupied by `[text](url)` constructs | > 0.5 |
+| markup overhead | markdown length ÷ visible-text length of the HTML | > 2.5 |
+| table lines | fraction of non-empty lines that are `\|` table rows | > 0.3 |
+
+Degraded emails fall back to the stored plain text with `degraded: true`
+in the response; the UI shows a "layout too complex — showing plain text"
+flag with a **render anyway** button, which refetches with
+`?force_markdown=true` (and can toggle back). Per-conversion scores are
+logged by the backend so the thresholds (constants at the top of
+`mail/render.py`) can be tuned against a real mailbox.
+
 ## Chat: RAG over the inbox
 
 ```mermaid

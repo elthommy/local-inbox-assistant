@@ -15,6 +15,7 @@ from .chat import stream_answer
 from .config import settings
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
 from .llm.ollama import OllamaClient
+from .mail.render import render_email
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -160,6 +161,37 @@ def get_email(email_id: int):
         if row is None:
             raise HTTPException(404, "email not found")
         return _email_dict(row, include_chips=True, conn=conn)
+
+
+@router.get("/emails/{email_id}/body")
+def get_email_body(email_id: int, force_markdown: bool = False):
+    """Reading view of an email: Markdown converted from the HTML part of the
+    source .eml when available and clean, the stored plain text otherwise.
+
+    Conversions flagged by the degradation heuristic (see mail/render.py)
+    fall back to plain text with degraded=true; force_markdown=true returns
+    the Markdown anyway (the UI's "render anyway" override).
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT maildir_file, body FROM emails WHERE id = ?", (email_id,)
+        ).fetchone()
+    if row is None:
+        raise HTTPException(404, "email not found")
+    rendered = render_email(settings.maildir / row["maildir_file"])
+    if rendered is None or (rendered.degraded and not force_markdown):
+        return {
+            "id": email_id,
+            "format": "text",
+            "body": row["body"] or "",
+            "degraded": rendered is not None and rendered.degraded,
+        }
+    return {
+        "id": email_id,
+        "format": "markdown",
+        "body": rendered.markdown,
+        "degraded": rendered.degraded,
+    }
 
 
 @router.get("/tasks")

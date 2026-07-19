@@ -21,6 +21,7 @@ export const api = {
   stats: () => getJSON('/stats'),
   emails: (filter) => getJSON(`/emails?filter=${filter}`),
   email: (id) => getJSON(`/emails/${id}`),
+  emailBody: (id, forceMarkdown = false) => getJSON(`/emails/${id}/body${forceMarkdown ? '?force_markdown=true' : ''}`),
   tasks: () => getJSON('/tasks'),
   events: () => getJSON('/events'),
   toggleTask: (id) => postJSON(`/tasks/${id}/toggle`),

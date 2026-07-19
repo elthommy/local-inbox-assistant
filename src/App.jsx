@@ -4,6 +4,12 @@ import remarkGfm from 'remark-gfm'
 import { api, streamChat } from './api.js'
 import { DATE_FORMATS, avatarColor, eventChipDate, eventGroupLabel, formatEmailTime, groupUpcomingEvents, nowTime, priorityColor, relativeTime } from './utils.js'
 
+// links inside rendered emails are untrusted: open in a new tab, never hand
+// the mail page a window.opener
+const EMAIL_MD_COMPONENTS = {
+  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+}
+
 const MONO = "'IBM Plex Mono', monospace"
 const SANS = "'IBM Plex Sans', system-ui, sans-serif"
 const TRACK_ON = '#1f6feb'
@@ -305,7 +311,7 @@ function ChatPane({ chatModel, models, onChatModelChange, useContext, toggleCont
   )
 }
 
-function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, onSummarize, dateFormat }) {
+function EmailRow({ email, body, expanded, onToggle, onDismiss, onMute, onGoTo, onSummarize, onForceRender, dateFormat }) {
   const initial = (email.sender || '?').replace(/^["']/, '').charAt(0).toUpperCase()
   const domain = email.sender_email ? email.sender_email.split('@').pop() : ''
   const suppressed = email.dismissed || email.muted
@@ -381,7 +387,51 @@ function EmailRow({ email, expanded, onToggle, onDismiss, onMute, onGoTo, onSumm
       </div>
       {expanded && (
         <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #1c2027' }}>
-          <div style={{ fontSize: 12.5, color: '#9aa1ac', lineHeight: 1.6 }}>{email.snippet}</div>
+          {body?.degraded && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontFamily: MONO, fontSize: 10.5, color: '#FBBF24' }}>
+              <span>⚠ {body.format === 'markdown' ? 'complex layout — rendered anyway' : 'layout too complex — showing plain text'}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onForceRender(body.format !== 'markdown')
+                }}
+                title="The HTML-to-markdown conversion of this email was judged too noisy; toggle between the plain text and the markdown rendering"
+                style={{
+                  background: '#2a2013',
+                  border: '1px solid #4a3a1f',
+                  color: '#FBBF24',
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  padding: '3px 8px',
+                  borderRadius: 5,
+                  cursor: 'pointer',
+                }}
+              >
+                {body.format === 'markdown' ? 'show plain text' : 'render anyway'}
+              </button>
+            </div>
+          )}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={body?.format === 'markdown' ? 'chat-md' : undefined}
+            style={{
+              fontSize: 12.5,
+              color: '#9aa1ac',
+              lineHeight: 1.6,
+              whiteSpace: body?.format === 'markdown' ? 'normal' : 'pre-wrap',
+              maxHeight: '40vh',
+              overflowY: 'auto',
+              cursor: 'auto',
+            }}
+          >
+            {body?.format === 'markdown' ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['img']} components={EMAIL_MD_COMPONENTS}>
+                {body.body}
+              </ReactMarkdown>
+            ) : (
+              body?.body || email.snippet
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 9, flexWrap: 'wrap' }}>
             {domain && (
               <span style={{ fontFamily: MONO, fontSize: 10, background: '#1a1f27', color: '#9aa1ac', padding: '3px 8px', borderRadius: 4 }}>
@@ -1055,6 +1105,9 @@ export default function App() {
   }
   const [filter, setFilter] = useState('priority')
   const [expandedId, setExpandedId] = useState(null)
+  // reading views fetched on demand when a row is expanded
+  // ({id: {format, body}}); the list endpoint only ships the 300-char snippet
+  const [bodies, setBodies] = useState({})
   const [pendingScrollId, setPendingScrollId] = useState(null)
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -1122,6 +1175,23 @@ export default function App() {
   useEffect(() => {
     refreshData()
   }, [refreshData])
+
+  // expanding a row pulls in the reading view — markdown from the source
+  // .eml's HTML part, or the stored plain text; on failure the row keeps
+  // showing the snippet
+  useEffect(() => {
+    if (expandedId === null || bodies[expandedId] !== undefined) return
+    let stale = false
+    api
+      .emailBody(expandedId)
+      .then((res) => {
+        if (!stale) setBodies((prev) => ({ ...prev, [expandedId]: res }))
+      })
+      .catch(() => {})
+    return () => {
+      stale = true
+    }
+  }, [expandedId, bodies])
 
   const chatModel = status?.ollama?.chat_model || 'ollama'
   const models = status?.ollama?.models ?? []
@@ -1243,6 +1313,17 @@ export default function App() {
     await refreshData()
   }
   const dismissEmail = (id) => dismissEmails([id])
+
+  // "render anyway" / "show plain text" on a degraded email: refetch the
+  // reading view with the override flipped and replace the cached one
+  const forceRenderEmail = async (id, force) => {
+    try {
+      const res = await api.emailBody(id, force)
+      setBodies((prev) => ({ ...prev, [id]: res }))
+    } catch {
+      /* keep the current view */
+    }
+  }
 
   const muteSender = async (senderEmail) => {
     try {
@@ -1396,12 +1477,14 @@ export default function App() {
                 <EmailRow
                   key={e.id}
                   email={e}
+                  body={bodies[e.id]}
                   expanded={expandedId === e.id}
                   onToggle={() => setExpandedId((cur) => (cur === e.id ? null : e.id))}
                   onDismiss={() => dismissEmail(e.id)}
                   onMute={() => muteSender(e.sender_email)}
                   onGoTo={filter === 'priority' ? () => goToEmail(e.id) : null}
                   onSummarize={filter === 'all' ? () => summarizeEmail(e) : null}
+                  onForceRender={(force) => forceRenderEmail(e.id, force)}
                   dateFormat={dateFormat}
                 />
               ))}

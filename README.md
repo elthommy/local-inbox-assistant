@@ -16,6 +16,10 @@ the UI shows it as "coming soon".
   - Maildir scanner + `.eml` parser (stdlib `email`, HTML→text fallback)
   - Incremental indexer: parse → embed (Ollama `nomic-embed-text` → ChromaDB)
     → LLM extraction of priority/tasks/events on recent mail
+  - On-demand reading view: the email's HTML part converted to Markdown,
+    with a quality heuristic that falls back to plain text (plus a
+    "render anyway" override) when the conversion degrades — see
+    [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#email-reading-view)
   - REST API + SSE streaming chat with RAG context
   - `mcp_server.py` — stdio MCP server (`search_mail`, `get_thread`,
     `list_tasks`, `list_events`)

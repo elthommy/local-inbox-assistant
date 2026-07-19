@@ -10,6 +10,7 @@ vi.mock('../api.js', () => ({
     stats: vi.fn(),
     emails: vi.fn(),
     email: vi.fn(),
+    emailBody: vi.fn(),
     tasks: vi.fn(),
     events: vi.fn(),
     mutedSenders: vi.fn(),
@@ -93,6 +94,8 @@ beforeEach(() => {
   api.stats.mockResolvedValue({ unread: 1, high_priority: 1 })
   api.emails.mockResolvedValue(EMAILS)
   api.email.mockResolvedValue(EMAILS[0])
+  // no reading view by default: rows fall back to the snippet
+  api.emailBody.mockResolvedValue({ id: 1, format: 'text', body: '' })
   api.tasks.mockResolvedValue(TASKS)
   api.events.mockResolvedValue(EVENTS)
   api.mutedSenders.mockResolvedValue([])
@@ -138,6 +141,58 @@ describe('App', () => {
     // event chip date rendered in the system locale by default
     const chipDate = EVENT_DATE.toLocaleDateString()
     expect(screen.getByText(`◷ Review meeting · ${chipDate} 10:00`)).toBeInTheDocument()
+  })
+
+  it('loads the full email body when a row is expanded', async () => {
+    const FULL_BODY = 'please take one more pass before Friday.\n\nThe deck is attached; focus on the revenue slide.'
+    api.emailBody.mockResolvedValue({ id: 1, format: 'text', body: FULL_BODY })
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    expect(api.emailBody).toHaveBeenCalledWith(1)
+    expect(await screen.findByText(/focus on the revenue slide/)).toBeInTheDocument()
+  })
+
+  it('renders a markdown reading view with safe links and no images', async () => {
+    api.emailBody.mockResolvedValue({
+      id: 1,
+      format: 'markdown',
+      body: '# Q3 numbers\n\nthey look **good**, see [the report](https://corp.com/q3)\n\n![pixel](https://t.corp.com/p.gif)',
+    })
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    expect((await screen.findByText('Q3 numbers')).tagName).toBe('H1')
+    expect(screen.getByText('good').tagName).toBe('STRONG')
+    const link = screen.getByRole('link', { name: 'the report' })
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('flags a degraded rendering and offers a render-anyway override', async () => {
+    api.emailBody
+      .mockResolvedValueOnce({ id: 1, format: 'text', body: 'plain fallback text', degraded: true })
+      .mockResolvedValueOnce({ id: 1, format: 'markdown', body: 'now **forced** markdown', degraded: true })
+      .mockResolvedValueOnce({ id: 1, format: 'text', body: 'plain fallback text', degraded: true })
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    // degraded: plain text shown, flagged, with the override offered
+    expect(await screen.findByText(/layout too complex — showing plain text/)).toBeInTheDocument()
+    expect(screen.getByText('plain fallback text')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('render anyway'))
+    expect(api.emailBody).toHaveBeenLastCalledWith(1, true)
+    expect((await screen.findByText('forced')).tagName).toBe('STRONG')
+    // still flagged, and reversible
+    expect(screen.getByText(/complex layout — rendered anyway/)).toBeInTheDocument()
+    await userEvent.click(screen.getByText('show plain text'))
+    expect(api.emailBody).toHaveBeenLastCalledWith(1, false)
+    expect(await screen.findByText('plain fallback text')).toBeInTheDocument()
+  })
+
+  it('keeps showing the snippet when the body fetch fails', async () => {
+    api.emailBody.mockRejectedValue(new Error('fetch failed'))
+    render(<App />)
+    await userEvent.click(await screen.findByText('Sarah Chen'))
+    expect(await screen.findByText(/one more pass/)).toBeInTheDocument()
   })
 
   it('switches filters and requests the matching email set', async () => {

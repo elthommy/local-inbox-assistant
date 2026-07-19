@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.8",
     "mcp>=1.9",
     "beautifulsoup4>=4.13",
+    "markdownify>=1.2.3",
 ]
 
 [dependency-groups]

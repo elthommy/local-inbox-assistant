@@ -26,7 +26,7 @@ a:hover {
   color: #7dd3fc;
 }
 
-/* assistant chat bubbles: markdown rendered by react-markdown */
+/* markdown rendered by react-markdown (chat bubbles, expanded emails) */
 .chat-md > :first-child {
   margin-top: 0;
 }
