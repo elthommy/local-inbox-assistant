@@ -148,7 +148,8 @@ uv run python -m scripts.benchmark_extraction --models qwen3:4b qwen3:8b
 
 ### Which folders are indexed
 
-`INBOX_MAILDIR` (default: the Thunderbird profile directory) is scanned
+`INBOX_MAILDIR` (default: the auto-detected Thunderbird profile, newest
+`*.default-release` or `*.default` under `~/.thunderbird`) is scanned
 recursively; every folder containing `.eml` files is indexed, across all
 accounts. Folders named in `INBOX_EXCLUDE_FOLDERS` are skipped — by default
 `Trash, Junk, Spam, Drafts, Unsent Messages, All Mail` (Gmail's "All Mail" is

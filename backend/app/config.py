@@ -1,9 +1,25 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BACKEND_DIR / "data"
+
+
+def _detect_thunderbird_profile() -> Path:
+    """Return the newest Thunderbird profile directory, e.g. ~/.thunderbird/xxxxxxxx.default-release."""
+    root = Path("~/.thunderbird").expanduser()
+    profiles = sorted(
+        (
+            p
+            for pattern in ("*.default-release", "*.default")
+            for p in root.glob(pattern)
+        ),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return profiles[0] if profiles else root
 
 
 class Settings(BaseSettings):
@@ -13,7 +29,7 @@ class Settings(BaseSettings):
 
     # Root scanned recursively for .eml files; every mailbox folder under it
     # is indexed. Pointing it at a single folder's cur/ dir still works.
-    maildir: Path = Path("~/.thunderbird/xxxxxxxx.default-release").expanduser()
+    maildir: Path = Field(default_factory=_detect_thunderbird_profile)
     # Folder names skipped during the scan (comma-separated, case-insensitive).
     # "All Mail" is the Gmail label archive: pure duplicates of other folders.
     exclude_folders: str = "Trash,Junk,Spam,Drafts,Unsent Messages,All Mail"
