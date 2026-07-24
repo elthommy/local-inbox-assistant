@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Claude cloud chat (opt-in): with a key set, "Claude" becomes selectable
     # in the chat dropdown. Extraction and embeddings always stay local.
     anthropic_api_key: str = ""
-    claude_model: str = "claude-opus-4-8"
+    claude_model: str = "claude-opus-5"
     # Which backend answers chat: "ollama" (local) or "claude" (cloud).
     chat_provider: str = "ollama"
 
