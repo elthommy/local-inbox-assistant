@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,6 +20,21 @@ def client(monkeypatch):
         yield c
 
 
+def days_ago(n: int) -> str:
+    """UTC timestamp n days in the past, for seeding date-window-sensitive rows."""
+    return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+
+
+def days_ahead(n: int) -> str:
+    """Calendar date n days in the future (YYYY-MM-DD), for seeding events."""
+    return (datetime.now(timezone.utc) + timedelta(days=n)).date().isoformat()
+
+
+# Seeded rows are dated relative to now so they stay inside the indexing and
+# extraction windows whenever the suite runs; literals silently fall out.
+EVENT_DATE = days_ahead(4)
+
+
 def seed(client):
     """Two emails, one high priority with a task and an event."""
     from app.db import get_conn
@@ -27,20 +44,22 @@ def seed(client):
             "INSERT INTO emails(maildir_file, message_id, sender, sender_email, subject, "
             "date_utc, unread, priority, snippet, body, extracted) VALUES "
             "('a.eml', '<a@x>', 'Sarah', 'sarah@x.com', 'Q3 report', "
-            "'2026-07-10T00:00:00+00:00', 1, 'high', 'snip', 'full body', 1)"
+            "?, 1, 'high', 'snip', 'full body', 1)",
+            (days_ago(1),),
         )
         high_id = cur.lastrowid
         conn.execute(
             "INSERT INTO emails(maildir_file, sender, subject, date_utc, priority, extracted) "
-            "VALUES('b.eml', 'News', 'digest', '2026-07-09T00:00:00+00:00', 'low', 1)"
+            "VALUES('b.eml', 'News', 'digest', ?, 'low', 1)",
+            (days_ago(2),),
         )
         conn.execute(
             "INSERT INTO tasks(email_id, text, due, done) VALUES(?, 'review', 'Fri', 0)",
             (high_id,),
         )
         conn.execute(
-            "INSERT INTO events(email_id, title, date, time) VALUES(?, 'review mtg', '2026-07-14', '10:00')",
-            (high_id,),
+            "INSERT INTO events(email_id, title, date, time) VALUES(?, 'review mtg', ?, '10:00')",
+            (high_id, EVENT_DATE),
         )
     return high_id
 
@@ -185,7 +204,7 @@ class TestStatsAndLists:
         eid = seed(client)
         data = client.get("/api/events").json()
         assert data[0]["source"] == "Sarah"
-        assert data[0]["date"] == "2026-07-14"
+        assert data[0]["date"] == EVENT_DATE
         assert data[0]["email_id"] == eid
 
 
@@ -231,7 +250,8 @@ class TestHandledEmails:
         with get_conn() as conn:
             conn.execute(
                 "INSERT INTO emails(maildir_file, sender, subject, date_utc, priority, extracted) "
-                "VALUES('c.eml', 'Boss', 'reply please', '2026-07-11T00:00:00+00:00', 'high', 1)"
+                "VALUES('c.eml', 'Boss', 'reply please', ?, 'high', 1)",
+                (days_ago(1),),
             )
         assert len(client.get("/api/emails?filter=priority").json()) == 2
 
