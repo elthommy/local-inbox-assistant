@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from . import indexer, rag
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .chat import stream_answer
-from .config import settings
+from .config import BACKEND_DIR, settings
 from .llm.claude import ClaudeClient
 from .llm.ollama import OllamaClient
 from .mail.render import render_email
@@ -105,7 +105,9 @@ async def status():
             "last_indexed": last_indexed,
             "window_days": settings.window_days,
             "maildir": str(settings.maildir),
-            "backend_dir": str(settings.db_path.parent.parent),
+            # The MCP register command needs the package root, which is fixed —
+            # deriving it from db_path broke as soon as INBOX_DB_PATH moved.
+            "backend_dir": str(BACKEND_DIR),
             "progress": dict(indexer.progress),
         },
     }
