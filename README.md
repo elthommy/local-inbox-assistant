@@ -39,7 +39,9 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
 - A Thunderbird profile storing mail in **maildir** format (one `.eml` file
-  per message) — see the limitation below
+  per message) — auto-detected on Linux, otherwise set `INBOX_MAILDIR`
+  ([where your mail is read from](#where-your-mail-is-read-from)); see also
+  the mbox limitation below
 - Optional: an Anthropic API key, if you want chat answers from Claude
   instead of the local model
 
@@ -54,6 +56,38 @@ message (maildir)". The setting only applies to newly created accounts, so an
 existing mbox account must be re-created (or synced into a maildir profile)
 to be indexed. Other mail clients work too as long as they store one message
 per `.eml` file under a common root.
+
+### Where your mail is read from
+
+`INBOX_MAILDIR` is the root scanned recursively for `.eml` files. Left unset,
+it is auto-detected: the most recently modified `*.default-release` (or
+`*.default`) profile under `~/.thunderbird`. To pin a specific profile — or to
+index just one account or one folder — set it explicitly:
+
+```bash
+# backend/.env
+INBOX_MAILDIR=~/.thunderbird/xxxxxxxx.default-release
+```
+
+Four things worth knowing:
+
+- **Auto-detection is Linux-only.** It only looks under `~/.thunderbird`. On
+  macOS (`~/Library/Thunderbird/Profiles`) and Windows
+  (`%APPDATA%\Thunderbird\Profiles`) it never matches, so `INBOX_MAILDIR` has
+  to be set by hand.
+- **It belongs in `backend/.env`, not the root `.env`.**
+  `INBOX_ANTHROPIC_API_KEY` is the exception that works in both places
+  (`start.sh` exports that one specifically); every other `INBOX_*` variable
+  is read only from `backend/.env` or the environment, and is silently
+  ignored in the repo-root `.env`.
+- **Changes need a backend restart.** Settings are read once at startup.
+- **When detection finds nothing**, the path falls back to `~/.thunderbird`
+  itself and indexing fails with `maildir root not found: …` — the fix is to
+  set `INBOX_MAILDIR`. To check which path is actually in use, open **⚙ MCP /
+  RAG → Data sources** in the app and hover the message count.
+
+Which of the scanned folders end up indexed is a separate setting: see
+[which folders are indexed](#which-folders-are-indexed).
 
 ## Run
 
@@ -148,8 +182,7 @@ uv run python -m scripts.benchmark_extraction --models qwen3:4b qwen3:8b
 
 ### Which folders are indexed
 
-`INBOX_MAILDIR` (default: the auto-detected Thunderbird profile, newest
-`*.default-release` or `*.default` under `~/.thunderbird`) is scanned
+The mail root ([`INBOX_MAILDIR`](#where-your-mail-is-read-from)) is scanned
 recursively; every folder containing `.eml` files is indexed, across all
 accounts. Folders named in `INBOX_EXCLUDE_FOLDERS` are skipped — by default
 `Trash, Junk, Spam, Drafts, Unsent Messages, All Mail` (Gmail's "All Mail" is

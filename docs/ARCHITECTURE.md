@@ -10,6 +10,10 @@ Mailbox format: only maildir-style storage is read — one message per `.eml`
 file. Thunderbird's default mbox format (one big file per folder) is not
 supported; see the limitation note in the README.
 
+Mail root: `INBOX_MAILDIR` in `backend/.env`, defaulting to the auto-detected
+Thunderbird profile — see
+[where your mail is read from](../README.md#where-your-mail-is-read-from).
+
 ## Components
 
 ```mermaid
