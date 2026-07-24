@@ -1,0 +1,59 @@
+version: 2
+
+# Two different things update dependencies here:
+#
+#   1. Version updates (this file) — routine upgrades, batched into one grouped
+#      PR per ecosystem, opened Saturdays at 14:00 Europe/Paris.
+#   2. Security updates — PRs for known vulnerabilities, opened IMMEDIATELY and
+#      ungrouped (one PR per advisory). These are NOT configured here: they are
+#      switched on in the repo under
+#      Settings -> Advanced Security -> Dependabot,
+#      by enabling "Dependabot alerts" + "Dependabot security updates".
+#      Both must be on, or nothing arrives outside the Saturday window.
+#
+# The `applies-to: version-updates` on each group below is what keeps the two
+# separate: without it the groups would also swallow security PRs and delay
+# them to the weekly schedule.
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "14:00"
+      timezone: Europe/Paris
+    groups:
+      frontend:
+        applies-to: version-updates
+        patterns: ["*"]
+    commit-message:
+      prefix: npm
+
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "14:00"
+      timezone: Europe/Paris
+    groups:
+      backend:
+        applies-to: version-updates
+        patterns: ["*"]
+    commit-message:
+      prefix: uv
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "14:00"
+      timezone: Europe/Paris
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
+    commit-message:
+      prefix: actions
