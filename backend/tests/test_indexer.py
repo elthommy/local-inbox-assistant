@@ -1,14 +1,14 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app import indexer, rag
 from app.config import settings
-from app.mail import maildir as indexer_maildir
 from app.db import get_conn, get_meta
+from app.mail import maildir as indexer_maildir
 
 
 def make_eml(name, subject="hello", days_ago=1, body="some body text", msgid=None):
-    dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    dt = datetime.now(UTC) - timedelta(days=days_ago)
     date_hdr = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
     path = settings.maildir / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -121,7 +121,7 @@ async def test_out_of_window_file_cached_and_not_reprobed(fake_embed, monkeypatc
     # an old message freshly synced: recent mtime, out-of-window Date header
     make_eml("archive/cur/old.eml", days_ago=settings.window_days + 30)
     old = settings.maildir / "archive/cur/old.eml"
-    now = datetime.now(timezone.utc).timestamp()
+    now = datetime.now(UTC).timestamp()
     os.utime(old, (now, now))
     await indexer.run_index(do_extract=False)
     with get_conn() as conn:

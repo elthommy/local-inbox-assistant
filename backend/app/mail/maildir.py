@@ -15,10 +15,10 @@ so it can cache them (skipped_files table) and spare the re-probe next run.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable, Iterator
 
 from ..config import settings
 from .parser import parse_date_only
@@ -42,7 +42,7 @@ class ScanResult:
 
 def window_start() -> datetime:
     """UTC datetime where the indexing window begins (now - window_days)."""
-    return datetime.now(timezone.utc) - timedelta(days=settings.window_days)
+    return datetime.now(UTC) - timedelta(days=settings.window_days)
 
 
 def rel_name(path: Path) -> str:

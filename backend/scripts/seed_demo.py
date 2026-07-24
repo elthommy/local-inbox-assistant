@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import shutil
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.utils import format_datetime, make_msgid
 
@@ -106,7 +106,7 @@ def mute_demo_sender() -> None:
         conn.execute(
             "INSERT OR IGNORE INTO muted_senders(sender_email, created_utc) "
             "VALUES(?, ?)",
-            ("digest@pythonweekly.example", datetime.now(timezone.utc).isoformat()),
+            ("digest@pythonweekly.example", datetime.now(UTC).isoformat()),
         )
 
 
@@ -128,7 +128,7 @@ async def seed(reset: bool) -> None:
     point_settings_at_demo()
     DEMO_DIR.mkdir(parents=True, exist_ok=True)
 
-    write_maildir(datetime.now(timezone.utc))
+    write_maildir(datetime.now(UTC))
     init_db()
 
     # Imported after settings are redirected: the indexer reads them at call

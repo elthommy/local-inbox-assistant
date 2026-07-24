@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.config import settings
 from app.mail import maildir
@@ -17,7 +17,7 @@ def make_eml(name: str, dt: datetime, mtime: datetime | None = None):
 
 
 def days_ago(n: int) -> datetime:
-    return datetime.now(timezone.utc) - timedelta(days=n)
+    return datetime.now(UTC) - timedelta(days=n)
 
 
 def scan_names(**kwargs) -> list[str]:
@@ -25,7 +25,7 @@ def scan_names(**kwargs) -> list[str]:
 
 
 def test_window_start_matches_setting():
-    delta = datetime.now(timezone.utc) - window_start()
+    delta = datetime.now(UTC) - window_start()
     assert abs(delta.days - settings.window_days) <= 1
 
 

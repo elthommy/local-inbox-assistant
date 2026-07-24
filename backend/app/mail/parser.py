@@ -11,7 +11,7 @@ import email.message
 import email.policy
 import email.utils
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -86,8 +86,8 @@ def parse_eml(path: Path) -> dict | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    dt = dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    dt = dt.astimezone(UTC)
 
     sender_name, sender_email = email.utils.parseaddr(str(msg.get("From", "")))
     body = _best_body(msg)
@@ -126,5 +126,5 @@ def parse_date_only(path: Path) -> datetime | None:
     except (ValueError, TypeError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)

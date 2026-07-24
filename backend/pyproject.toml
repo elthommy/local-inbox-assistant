@@ -24,6 +24,21 @@ dev = [
     "ruff>=0.15",
 ]
 
+[tool.ruff.lint]
+# Selected explicitly rather than inheriting ruff's defaults: 0.16 grew the
+# default set from 59 rules to 413, which changed what CI enforced without a
+# change to this repo. Pinning the set means a ruff upgrade is a dependency
+# bump, not a silent policy change.
+#
+# E4/E7/E9 + F are ruff's pre-0.16 defaults (pycodestyle essentials, pyflakes).
+# I and UP are added deliberately: import sorting and modern-syntax rewrites
+# are mechanical and entirely auto-fixable.
+#
+# Not selected, on purpose: BLE001 and S110 flag the broad `except Exception`
+# and try/except/pass in the parser and indexer, which are the deliberate
+# per-email fault tolerance this project is built around and tests for.
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

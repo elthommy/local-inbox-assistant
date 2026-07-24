@@ -3,16 +3,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import indexer, rag
-from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .chat import stream_answer
 from .config import BACKEND_DIR, settings
+from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .llm.claude import ClaudeClient
 from .llm.ollama import OllamaClient
 from .mail.render import render_email
@@ -333,7 +333,7 @@ async def reextract():
     if indexer.progress["phase"] not in ("idle", "error"):
         return {"started": False, "progress": dict(indexer.progress)}
     cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=settings.extraction_window_days)
+        datetime.now(UTC) - timedelta(days=settings.extraction_window_days)
     ).isoformat()
     with get_conn() as conn:
         reset = conn.execute(

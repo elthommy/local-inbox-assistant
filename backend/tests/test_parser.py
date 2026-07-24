@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-
+from datetime import UTC, datetime
 
 from app.mail.parser import parse_date_only, parse_eml
 
@@ -183,7 +182,7 @@ class TestParseDateOnly:
     def test_reads_date_from_header_block(self, tmp_path):
         p = write(tmp_path, "a.eml", PLAIN_EML)
         dt = parse_date_only(p)
-        assert dt == datetime(2026, 7, 10, 7, 14, tzinfo=timezone.utc)
+        assert dt == datetime(2026, 7, 10, 7, 14, tzinfo=UTC)
 
     def test_missing_date(self, tmp_path):
         assert parse_date_only(write(tmp_path, "f.eml", NO_DATE_EML)) is None

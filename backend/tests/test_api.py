@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -22,12 +22,12 @@ def client(monkeypatch):
 
 def days_ago(n: int) -> str:
     """UTC timestamp n days in the past, for seeding date-window-sensitive rows."""
-    return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+    return (datetime.now(UTC) - timedelta(days=n)).isoformat()
 
 
 def days_ahead(n: int) -> str:
     """Calendar date n days in the future (YYYY-MM-DD), for seeding events."""
-    return (datetime.now(timezone.utc) + timedelta(days=n)).date().isoformat()
+    return (datetime.now(UTC) + timedelta(days=n)).date().isoformat()
 
 
 # Seeded rows are dated relative to now so they stay inside the indexing and

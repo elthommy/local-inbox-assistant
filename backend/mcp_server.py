@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 
-from app.db import get_conn, init_db, triage_filter
 from app import rag
+from app.db import get_conn, init_db, triage_filter
 from app.llm.ollama import OllamaClient
 
 mcp = FastMCP("localmail")

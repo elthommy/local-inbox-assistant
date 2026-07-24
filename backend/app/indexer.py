@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from . import rag
 from .config import settings
@@ -183,4 +183,4 @@ async def _extract_pending(ollama: OllamaClient) -> None:
 def _mark_indexed() -> None:
     """Record the completion time of this indexing run."""
     with get_conn() as conn:
-        set_meta(conn, "last_indexed", datetime.now(timezone.utc).isoformat())
+        set_meta(conn, "last_indexed", datetime.now(UTC).isoformat())

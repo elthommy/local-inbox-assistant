@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.config import settings
 from app.db import get_conn
@@ -10,7 +10,7 @@ from app.extract import (
 
 
 def insert_email(conn, *, file="a.eml", days_ago=1, extracted=0, sender_email=""):
-    dt = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    dt = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
     cur = conn.execute(
         "INSERT INTO emails(maildir_file, subject, date_utc, extracted, sender_email) "
         "VALUES(?, 's', ?, ?, ?)",

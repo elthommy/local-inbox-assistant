@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from .config import settings
 from .db import triage_filter
@@ -65,7 +65,7 @@ The email may be in French or English. Reply with JSON matching the schema, noth
 def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Unextracted, non-dismissed, non-muted emails inside the extraction window."""
     cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=settings.extraction_window_days)
+        datetime.now(UTC) - timedelta(days=settings.extraction_window_days)
     ).isoformat()
     # dismissed emails and muted senders are skipped entirely: no LLM call.
     # They keep extracted = 0, so un-dismissing/un-muting lets a later run
