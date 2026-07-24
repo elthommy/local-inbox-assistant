@@ -5,7 +5,7 @@ description = "Local AI-assisted inbox: Thunderbird maildir + Ollama RAG + MCP"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.139.2",
     "uvicorn>=0.34",
     "chromadb>=1.0",
     "httpx>=0.28",
@@ -13,7 +13,7 @@ dependencies = [
     "mcp>=1.9",
     "beautifulsoup4>=4.13",
     "markdownify>=1.2.3",
-    "anthropic>=0.70",
+    "anthropic>=0.120.0",
 ]
 
 [dependency-groups]
@@ -21,7 +21,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.25",
     "respx>=0.22",
-    "ruff>=0.15",
+    "ruff>=0.16.0",
 ]
 
 [tool.ruff.lint]
