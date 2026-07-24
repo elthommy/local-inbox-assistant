@@ -1,5 +1,7 @@
 # local-inbox-assistant
 
+[![tests](https://github.com/elthommy/local-inbox-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/elthommy/local-inbox-assistant/actions/workflows/tests.yml)
+
 A fully local, AI-assisted inbox dashboard. It indexes every mailbox folder of
 your Thunderbird profile (`.eml` files across all accounts), answers questions
 about your mail with a local Ollama
@@ -11,6 +13,45 @@ By default nothing leaves your machine: parsing, embeddings (ChromaDB +
 Claude (Anthropic API) instead of the local model — an explicit opt-in per
 conversation; see [Using Claude for chat](#using-claude-for-chat-optional).
 Indexing, extraction, and embeddings always stay local.
+
+## Screenshots
+
+All screenshots use the built-in synthetic mailbox, not real mail — see
+[demo mode](#demo-mode-synthetic-mailbox) to reproduce them.
+
+### Home Page / All Mail
+
+![Two-pane dashboard: a chat answer listing tasks and events grouped by urgency, next to the full mail list](docs/screenshots/screenshot_local-inbox-assistant_all_mail_rag.png)
+
+*Chat with inbox context on: the answer is built from the RAG index over all
+17 indexed emails, each item attributed to the message it came from. Answered
+here by `qwen3.6`; the model is switchable from the dropdown.*
+
+### Priority
+
+![Priority-filtered inbox showing the five emails ranked high priority](docs/screenshots/screenshot_local-inbox-assistant_priority.png)
+
+*The priority filter: only mail the extraction pass flagged as high priority.*
+
+![The same list with a French email expanded, showing its extracted task and deadline chips](docs/screenshots/screenshot_local-inbox-assistant_priority_opened_mail.png)
+
+*Expanding a message renders its body inline, with the extracted task and
+deadline shown as chips underneath, plus per-sender mute and dismiss actions.*
+
+### Tasks
+
+![Task list aggregated across emails, each with its source sender and due date](docs/screenshots/screenshot_local-inbox-assistant_tasks.png)
+
+*Every task the extraction pass found, across all mail, with its source and
+due date. Checking one marks it done without leaving the dashboard.*
+
+### Events
+
+![Events grouped by day, mixing French and English dates](docs/screenshots/screenshot_local-inbox-assistant_events.png)
+
+*Upcoming events grouped by day — French `dd/mm/yyyy` and English dates are
+normalised into the same timeline.*
+
 
 ## Architecture
 
@@ -129,6 +170,25 @@ npm run dev            # http://localhost:5173 (proxies /api to :8000)
 Backend configuration lives in `backend/.env` (see `backend/.env.example`):
 mail root path, excluded folders, indexing window, model names, Ollama URL.
 
+### Demo mode (synthetic mailbox)
+
+To try the app — or take screenshots — without pointing it at real mail, seed a
+self-contained demo mailbox of 17 invented emails (English and French, with
+tasks, events and priorities already attached):
+
+```bash
+cd backend
+uv run python -m scripts.seed_demo --reset
+```
+
+Everything lands in `backend/data/demo/` and the real index is never touched.
+The normal scan → parse → embed pipeline runs, so chat and RAG work against the
+synthetic corpus; only the LLM extraction pass is skipped, since the corpus
+ships its own canned results (fast and reproducible). Embedding still needs
+Ollama running. The script prints the exact command to launch the app against
+the demo data — it sets `INBOX_MAILDIR`, `INBOX_DB_PATH` and `INBOX_CHROMA_PATH`
+so the demo and the real index stay entirely separate.
+
 ### Changing models
 
 Chat and email parsing (the task/event/priority extraction pass) use two
@@ -145,6 +205,17 @@ Choices persist (SQLite meta table) and survive restarts. A parsing model
 switch only affects newly indexed mail — already-parsed emails keep their
 cached results. To redo the current extraction window with the new model,
 use the drawer's **"re-parse recent emails"** button.
+
+**On a mixed-language mailbox, expect the chat model to drift into the wrong
+language.** With French and English mail in the same index, `qwen3:8b` — the
+default — will sometimes answer an English question in French, because the
+retrieved excerpts it is reasoning over are French. The extraction pass is less
+exposed to this: it runs once per email, so it only ever sees one language at a
+time. Two ways out for chat, in increasing order of cost: state the language in
+the question ("answer in English"), or switch the chat model to a larger one —
+`qwen3.6` holds the requested language reliably here, at a much larger download
+and more VRAM. This is a small-model limitation rather than a bug in the
+retrieval, so it does not affect a single-language mailbox.
 
 The embedding model is the exception: it is set via `INBOX_EMBED_MODEL` in
 `backend/.env` (default `nomic-embed-text`), and changing it requires
@@ -168,7 +239,7 @@ task/event lists, and the pinned email when using "summarize". Retrieval
 run locally, whichever chat backend is selected. Without a key, everything
 is local and the Claude option stays disabled.
 
-The Claude model defaults to `claude-opus-4-8` and can be overridden with
+The Claude model defaults to `claude-opus-5` and can be overridden with
 `INBOX_CLAUDE_MODEL` in `backend/.env`.
 
 To compare candidate extraction models on your own mail before switching,
@@ -256,6 +327,10 @@ npm run test:watch       # watch mode
   rebuild from scratch.
 - **mbox is not supported**: only maildir-style `.eml` files are indexed (see
   the limitation under Requirements).
+- **The API is unauthenticated.** The backend binds to localhost only, so
+  nothing on the network can reach it — but any process running as your user
+  can read the whole indexed mailbox at `http://localhost:8000`. Don't expose
+  the port beyond loopback without putting authentication in front of it.
 - **Claude** (`backend/app/llm/claude.py`) is chat-only and opt-in: it is
   used exclusively when selected in the chat dropdown, and never for
   indexing, embeddings, or extraction.
