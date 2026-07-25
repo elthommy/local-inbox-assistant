@@ -5,7 +5,7 @@ description = "Local AI-assisted inbox: Thunderbird maildir + Ollama RAG + MCP"
 requires-python = ">=3.12,<3.13"
 license = "MIT"
 dependencies = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.140.0",
     "uvicorn>=0.34",
     "chromadb>=1.0",
     "httpx>=0.28",
