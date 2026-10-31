@@ -1,6 +1,7 @@
 from pathlib import Path
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -43,9 +44,10 @@ class Settings(BaseSettings):
     # picked from scripts/benchmark_extraction.py results.
     extraction_model: str = "qwen3:8b"
     embed_model: str = "nomic-embed-text"
-    # Download a missing embedding/extraction model before indexing uses it
-    # (several GB). Off: indexing stops with an error naming the model.
-    auto_pull: bool = True
+    # What to do when a configured Ollama model is missing (downloads are
+    # several GB): "ask" = the UI asks before downloading, "always" = indexing
+    # pulls it unattended, "never" = indexing stops with an error naming it.
+    auto_pull: Literal["ask", "always", "never"] = "ask"
 
     # Claude cloud chat (opt-in): with a key set, "Claude" becomes selectable
     # in the chat dropdown. Extraction and embeddings always stay local.
@@ -60,6 +62,17 @@ class Settings(BaseSettings):
     chunk_size: int = 1200
     chunk_overlap: int = 150
     rag_top_k: int = 6
+
+    @field_validator("auto_pull", mode="before")
+    @classmethod
+    def _auto_pull_compat(cls, value):
+        """Accept the earlier boolean form: true -> always, false -> never."""
+        text = str(value).strip().lower()
+        if text in ("true", "1", "yes", "on"):
+            return "always"
+        if text in ("false", "0", "no", "off"):
+            return "never"
+        return text
 
 
 settings = Settings()

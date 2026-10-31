@@ -70,6 +70,15 @@ def _selectable(info: dict) -> bool:
     return name != settings.embed_model and "embed" not in name
 
 
+def _missing_models(pulled: list[str]) -> list[str]:
+    """Configured Ollama models that are not pulled (chat only if it is used)."""
+    wanted = [settings.embed_model, settings.extraction_model]
+    if settings.chat_provider == "ollama":
+        wanted.append(settings.chat_model)
+    missing = [m for m in wanted if not model_pulled(m, pulled)]
+    return list(dict.fromkeys(missing))  # dedupe, keep order
+
+
 @router.get("/status")
 async def status():
     """Health snapshot: Ollama reachability, Claude stub, index progress."""
@@ -90,6 +99,9 @@ async def status():
             "chat_model_pulled": model_pulled(settings.chat_model, models),
             "extraction_model_pulled": model_pulled(settings.extraction_model, models),
             "models": [m for m in models_info if _selectable(m)],
+            "auto_pull": settings.auto_pull,
+            # only meaningful when Ollama answers: down != "nothing pulled"
+            "missing_models": _missing_models(models) if ollama_up else [],
         },
         "claude": {
             "configured": ClaudeClient().configured(),
@@ -349,6 +361,20 @@ OLLAMA_UNREACHABLE_MESSAGE = (
 def _sse_error(message: str) -> str:
     """Format an SSE error event carrying a user-facing message."""
     return f"event: error\ndata: {json.dumps({'message': message})}\n\n"
+
+
+@router.post("/models/pull")
+async def pull_models():
+    """Download the configured models that are missing (the UI asked the
+    user first), then run an indexing pass that can use them. Takes no model
+    name: only models already configured here can be pulled."""
+    if indexer.progress["phase"] not in ("idle", "error"):
+        return {"started": False, "progress": dict(indexer.progress)}
+    missing = _missing_models(await OllamaClient().list_models())
+    if not missing:
+        return {"started": False, "missing": []}
+    asyncio.create_task(indexer.run_index(pull=missing))
+    return {"started": True, "missing": missing}
 
 
 class ChatRequest(BaseModel):
