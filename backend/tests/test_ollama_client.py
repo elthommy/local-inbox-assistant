@@ -5,7 +5,8 @@ import pytest
 import respx
 
 from app.config import settings
-from app.llm.ollama import OllamaClient
+from app.llm.errors import UserFacingError
+from app.llm.ollama import OllamaClient, model_pulled
 
 BASE = settings.ollama_url
 
@@ -147,3 +148,49 @@ async def test_embed_batches_and_errors():
 def test_model_defaults_to_settings():
     assert OllamaClient().model == settings.chat_model
     assert OllamaClient("other").model == "other"
+
+
+def test_model_pulled_matches_with_or_without_tag():
+    pulled = ["qwen3:8b", "nomic-embed-text:latest"]
+    assert model_pulled("qwen3:8b", pulled)
+    assert model_pulled("nomic-embed-text", pulled)
+    assert not model_pulled("qwen3:4b", pulled)
+
+
+@respx.mock
+async def test_pull_reports_progress_and_raises_on_error():
+    lines = [
+        {"status": "pulling manifest"},
+        {"status": "pulling abc", "total": 100, "completed": 40},
+        {"status": "pulling abc", "total": 100, "completed": 100},
+        {"status": "success"},
+    ]
+    route = respx.post(f"{BASE}/api/pull").mock(
+        return_value=httpx.Response(
+            200, text="\n".join(json.dumps(x) for x in lines) + "\n"
+        )
+    )
+    seen = []
+    await OllamaClient().pull("qwen3:8b", lambda d, t: seen.append((d, t)))
+    assert seen == [(40, 100), (100, 100)]
+    assert json.loads(route.calls[0].request.content) == {"model": "qwen3:8b"}
+    route.mock(
+        return_value=httpx.Response(200, text=json.dumps({"error": "not found"}))
+    )
+    with pytest.raises(UserFacingError, match="not found"):
+        await OllamaClient().pull("nope:1b")
+
+
+@respx.mock
+async def test_chat_stream_404_names_the_missing_model():
+    respx.post(f"{BASE}/api/show").mock(return_value=show_response([]))
+    respx.post(f"{BASE}/api/chat").mock(
+        return_value=httpx.Response(404, json={"error": "model not found"})
+    )
+    with pytest.raises(UserFacingError, match="ollama pull ghost:1b"):
+        [
+            c
+            async for c in OllamaClient("ghost:1b").chat_stream(
+                [{"role": "user", "content": "hi"}]
+            )
+        ]

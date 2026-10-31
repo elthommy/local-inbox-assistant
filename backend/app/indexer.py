@@ -19,13 +19,14 @@ from .extract import (
     mark_extraction_failed,
     store_extraction,
 )
-from .llm.ollama import OllamaClient
+from .llm.errors import UserFacingError
+from .llm.ollama import OllamaClient, model_pulled, not_pulled_message
 from .mail.maildir import rel_name, scan_window
 from .mail.parser import parse_eml
 
 log = logging.getLogger(__name__)
 
-progress: dict = {"phase": "idle", "done": 0, "total": 0, "error": None}
+progress: dict = {"phase": "idle", "done": 0, "total": 0, "error": None, "model": None}
 _lock = asyncio.Lock()
 
 EMAIL_COLUMNS = (
@@ -100,6 +101,29 @@ async def _run(do_extract: bool) -> None:
     _mark_indexed()
 
 
+async def _ensure_model(model: str) -> None:
+    """Make sure `model` is pulled, downloading it when INBOX_AUTO_PULL is on.
+
+    Raising here aborts the run (phase "error") before any email is touched,
+    so a missing model never marks emails as extracted-with-defaults.
+    """
+    client = OllamaClient(model)
+    if model_pulled(model, await client.list_models()):
+        return
+    if not settings.auto_pull:
+        raise UserFacingError(
+            f"{not_pulled_message(model)} (or set INBOX_AUTO_PULL=true)"
+        )
+    log.info("model %s missing, pulling it", model)
+    progress.update(phase="pulling", model=model, done=0, total=0)
+
+    def on_progress(done: int, total: int) -> None:
+        """Publish download progress of the current layer."""
+        progress.update(done=done, total=total)
+
+    await client.pull(model, on_progress)
+
+
 def _on_scan_progress(phase: str, done: int, total: int) -> None:
     """Publish scan progress (called from the scan thread)."""
     progress.update(phase=phase, done=done, total=total)
@@ -150,6 +174,8 @@ async def _embed_pending(ollama: OllamaClient) -> None:
         to_embed = [
             dict(r) for r in conn.execute("SELECT * FROM emails WHERE embedded = 0")
         ]
+    if to_embed:
+        await _ensure_model(settings.embed_model)
     progress.update(phase="embedding", done=0, total=len(to_embed))
     batch = 16
     for i in range(0, len(to_embed), batch):
@@ -167,6 +193,8 @@ async def _extract_pending(ollama: OllamaClient) -> None:
     """Run LLM extraction (priority/tasks/events) on emails that need it."""
     with get_conn() as conn:
         pending = emails_needing_extraction(conn)
+    if pending:
+        await _ensure_model(ollama.model)
     progress.update(phase="extracting", done=0, total=len(pending))
     for i, row in enumerate(pending):
         try:

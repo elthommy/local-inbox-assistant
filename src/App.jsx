@@ -661,6 +661,9 @@ const PHASE_LABELS = {
   parsing: (p) => `reading new emails… ${p.done}/${p.total}`,
   embedding: (p) => `adding to RAG DB… ${p.done}/${p.total}`,
   extracting: (p) => `model analysis… ${p.done}/${p.total}`,
+  // byte counts, one model layer at a time (total is 0 until sizes arrive)
+  pulling: (p) =>
+    p.total ? `downloading ${p.model}… ${(p.done / 1e9).toFixed(1)}/${(p.total / 1e9).toFixed(1)} GB` : `downloading ${p.model}…`,
 }
 
 function IndexProgress({ progress }) {

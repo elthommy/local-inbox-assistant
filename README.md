@@ -224,6 +224,14 @@ vectors from different embedding models are not comparable. There is
 deliberately no reindex-from-scratch button in the UI — nothing tunable
 there invalidates the embeddings.
 
+**Missing models are downloaded automatically.** If the embedding or
+extraction model is not pulled in Ollama when indexing needs it, the backend
+pulls it first (the status line shows "downloading <model>…" with progress).
+Set `INBOX_AUTO_PULL=false` in `backend/.env` to opt out, e.g. on a metered
+connection: indexing then stops with an error naming the model to
+`ollama pull`, without touching any email. Chat never auto-pulls; a missing
+chat model answers with the same `ollama pull` hint.
+
 ### Using Claude for chat (optional)
 
 With an Anthropic API key configured (`INBOX_ANTHROPIC_API_KEY` in the

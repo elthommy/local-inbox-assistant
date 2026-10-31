@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     # picked from scripts/benchmark_extraction.py results.
     extraction_model: str = "qwen3:8b"
     embed_model: str = "nomic-embed-text"
+    # Download a missing embedding/extraction model before indexing uses it
+    # (several GB). Off: indexing stops with an error naming the model.
+    auto_pull: bool = True
 
     # Claude cloud chat (opt-in): with a key set, "Claude" becomes selectable
     # in the chat dropdown. Extraction and embeddings always stay local.

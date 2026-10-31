@@ -16,7 +16,7 @@ from .config import BACKEND_DIR, settings
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .llm.claude import ClaudeClient
 from .llm.errors import UserFacingError
-from .llm.ollama import OllamaClient
+from .llm.ollama import OllamaClient, model_pulled
 from .mail.render import render_email
 
 log = logging.getLogger(__name__)
@@ -60,11 +60,6 @@ def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
     return d
 
 
-def _model_pulled(model: str, pulled: list[str]) -> bool:
-    """Whether a model name (with or without tag) is among the pulled models."""
-    return any(m == model or m.startswith(model + ":") for m in pulled)
-
-
 def _selectable(info: dict) -> bool:
     """Whether a pulled model can be offered as a chat/extraction choice.
 
@@ -92,8 +87,8 @@ async def status():
             "chat_model": settings.chat_model,
             "extraction_model": settings.extraction_model,
             "embed_model": settings.embed_model,
-            "chat_model_pulled": _model_pulled(settings.chat_model, models),
-            "extraction_model_pulled": _model_pulled(settings.extraction_model, models),
+            "chat_model_pulled": model_pulled(settings.chat_model, models),
+            "extraction_model_pulled": model_pulled(settings.extraction_model, models),
             "models": [m for m in models_info if _selectable(m)],
         },
         "claude": {
