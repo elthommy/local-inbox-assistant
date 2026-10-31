@@ -21,6 +21,7 @@ vi.mock('../api.js', () => ({
     muteSender: vi.fn(),
     reindex: vi.fn(),
     reextract: vi.fn(),
+    pullModels: vi.fn(),
   },
   streamChat: vi.fn(),
 }))
@@ -594,3 +595,38 @@ describe('App', () => {
     expect(indicators.length).toBeGreaterThanOrEqual(1)
   })
 })
+
+describe('model download prompt', () => {
+  const missing = (auto_pull) => ({
+    ...STATUS,
+    ollama: { ...STATUS.ollama, extraction_model_pulled: false, auto_pull, missing_models: ['qwen3:8b'] },
+  })
+
+  it('asks before downloading a missing model and starts the pull on confirm', async () => {
+    api.status.mockResolvedValue(missing('ask'))
+    api.pullModels.mockResolvedValue({ started: true, missing: ['qwen3:8b'] })
+    render(<App />)
+    const dialog = await screen.findByRole('dialog', { name: 'Model not installed' })
+    expect(within(dialog).getByText('qwen3:8b')).toBeInTheDocument()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download' }))
+    expect(api.pullModels).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('"Not now" closes the prompt without downloading', async () => {
+    api.status.mockResolvedValue(missing('ask'))
+    render(<App />)
+    const dialog = await screen.findByRole('dialog', { name: 'Model not installed' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Not now' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.pullModels).not.toHaveBeenCalled()
+  })
+
+  it('never prompts unless INBOX_AUTO_PULL is ask', async () => {
+    api.status.mockResolvedValue(missing('never'))
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+

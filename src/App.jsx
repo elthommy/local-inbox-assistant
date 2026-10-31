@@ -666,6 +666,43 @@ const PHASE_LABELS = {
     p.total ? `downloading ${p.model}… ${(p.done / 1e9).toFixed(1)}/${(p.total / 1e9).toFixed(1)} GB` : `downloading ${p.model}…`,
 }
 
+// INBOX_AUTO_PULL=ask: a configured Ollama model is missing — ask before a
+// multi-GB download. Ollama only reports the size once the pull has started.
+function ModelDownloadPrompt({ models, onDownload, onDismiss }) {
+  const btn = { fontFamily: MONO, fontSize: 12, borderRadius: 6, padding: '7px 14px', cursor: 'pointer' }
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 30, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="model-download-title"
+        style={{ background: '#12151a', border: '1px solid #232830', borderRadius: 10, padding: 20, width: 380, maxWidth: '92vw', fontFamily: SANS, color: '#e8eaed' }}
+      >
+        <div id="model-download-title" style={{ fontFamily: MONO, fontWeight: 700, fontSize: 13.5, marginBottom: 10 }}>
+          {models.length === 1 ? 'Model not installed' : 'Models not installed'}
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.5, color: '#b8bcc4' }}>
+          {models.length === 1 ? 'This model is' : 'These models are'} configured but not pulled in Ollama:
+          <ul style={{ fontFamily: MONO, fontSize: 12, color: '#e8eaed', margin: '8px 0', paddingLeft: 18 }}>
+            {models.map((m) => (
+              <li key={m}>{m}</li>
+            ))}
+          </ul>
+          Download now? Models are usually several GB. Until then, indexing is paused.
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button onClick={onDismiss} style={{ ...btn, background: 'none', border: '1px solid #2a2f38', color: '#9aa0a6' }}>
+            Not now
+          </button>
+          <button onClick={onDownload} style={{ ...btn, background: TRACK_ON, border: '1px solid ' + TRACK_ON, color: '#fff' }}>
+            Download
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function IndexProgress({ progress }) {
   if (!progress || progress.phase === 'idle') return null
   if (progress.phase === 'error') {
@@ -1387,6 +1424,25 @@ export default function App() {
     }
   }
 
+  // model download prompt: shown again only if the set of missing models changes
+  const missingModels = status?.ollama?.missing_models ?? []
+  const missingKey = missingModels.join(',')
+  const [promptDismissedFor, setPromptDismissedFor] = useState('')
+  const runIdle = ['idle', 'error'].includes(status?.index?.progress?.phase ?? 'idle')
+  const showModelPrompt = status?.ollama?.up && status.ollama.auto_pull === 'ask' && missingKey !== '' && missingKey !== promptDismissedFor && runIdle
+
+  const downloadModels = async () => {
+    setPromptDismissedFor(missingKey)
+    try {
+      await api.pullModels()
+      const s = await api.status()
+      setStatus(s)
+      indexingRef.current = true
+    } catch {
+      /* status poll will surface it */
+    }
+  }
+
   const reextract = async () => {
     try {
       await api.reextract()
@@ -1593,6 +1649,7 @@ export default function App() {
         dateFormat={dateFormat}
         onDateFormatChange={changeDateFormat}
       />
+      {showModelPrompt && <ModelDownloadPrompt models={missingModels} onDownload={downloadModels} onDismiss={() => setPromptDismissedFor(missingKey)} />}
     </div>
   )
 }
