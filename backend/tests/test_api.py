@@ -75,18 +75,25 @@ class TestStatus:
         async def models_info(self):
             return [
                 {"name": "qwen3:8b", "size": 5_200_000_000},
+                {"name": "gemma4:12b", "size": 8_000_000_000},
                 {"name": "nomic-embed-text:latest", "size": 274_000_000},
             ]
 
         monkeypatch.setattr(OllamaClient, "available", up)
         monkeypatch.setattr(OllamaClient, "list_models_info", models_info)
         monkeypatch.setattr(settings, "anthropic_api_key", "")
+        # independent of the shipped defaults (tested in test_config.py)
+        monkeypatch.setattr(settings, "chat_model", "qwen3:8b")
+        monkeypatch.setattr(settings, "extraction_model", "gemma4:12b")
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is True
         assert data["ollama"]["chat_model_pulled"] is True
         assert data["ollama"]["extraction_model_pulled"] is True
         # embedding models are filtered out of the selectable list
-        assert data["ollama"]["models"] == [{"name": "qwen3:8b", "size": 5_200_000_000}]
+        assert data["ollama"]["models"] == [
+            {"name": "qwen3:8b", "size": 5_200_000_000},
+            {"name": "gemma4:12b", "size": 8_000_000_000},
+        ]
         assert data["ollama"]["auto_pull"] == settings.auto_pull
         assert data["ollama"]["missing_models"] == []
         assert data["claude"] == {"configured": False, "model": settings.claude_model}

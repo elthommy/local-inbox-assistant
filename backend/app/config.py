@@ -40,9 +40,10 @@ class Settings(BaseSettings):
 
     ollama_url: str = "http://localhost:11434"
     chat_model: str = "qwen3:8b"
-    # Extraction can run a different (typically lighter) model than chat;
-    # picked from scripts/benchmark_extraction.py results.
-    extraction_model: str = "qwen3:8b"
+    # Extraction can run a different model than chat. gemma4:12b won the
+    # 2026-10-31 benchmark against hand-checked labels (see README "Changing
+    # models"): same speed as qwen3:8b, far fewer false "high"/invented tasks.
+    extraction_model: str = "gemma4:12b"
     embed_model: str = "nomic-embed-text"
     # What to do when a configured Ollama model is missing (downloads are
     # several GB): "ask" = the UI asks before downloading, "always" = indexing

@@ -74,8 +74,9 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
 ## Requirements
 
 - [Ollama](https://ollama.com) running locally with:
-  - an instruct model for chat and one for email parsing — both default to
-    `qwen3:8b` (`ollama pull qwen3:8b`), switchable in the UI
+  - an instruct model for chat and one for email parsing — defaults
+    `qwen3:8b` (chat) and `gemma4:12b` (parsing), switchable in the UI; a
+    missing one is offered for download by the app
   - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
@@ -193,8 +194,9 @@ so the demo and the real index stay entirely separate.
 
 Chat and email parsing (the task/event/priority extraction pass) use two
 separate models, so a lighter model can triage the inbox while a bigger one
-answers questions — or vice versa. Both default to `qwen3:8b` and are chosen
-in the UI, from any non-embedding model pulled in Ollama (`ollama pull …`):
+answers questions — or vice versa. Chat defaults to `qwen3:8b`, email parsing
+to `gemma4:12b` (see [why](#why-gemma412b-for-parsing)); both are chosen in the
+UI, from any non-embedding model pulled in Ollama (`ollama pull …`):
 
 - **settings drawer → Models**: one dropdown for the chat model, one for the
   email parsing model, each option showing the model's size;
@@ -254,12 +256,39 @@ The Claude model defaults to `claude-opus-5` and can be overridden with
 
 To compare candidate extraction models on your own mail before switching,
 run the benchmark (read-only, compares against the stored results and writes
-`backend/data/benchmark/summary.csv` + `disagreements.md`):
+`backend/data/benchmark/summary.csv` + `disagreements.md`). Note that the
+stored results are themselves a model's output, not ground truth — for a real
+verdict, hand-check a sample (see below):
 
 ```bash
 cd backend
 uv run python -m scripts.benchmark_extraction --models qwen3:4b qwen3:8b
 ```
+
+#### Why gemma4:12b for parsing
+
+Measured on 230 hand-checked emails from a real, mostly French mailbox:
+130 used to tune the extraction prompt, plus two holdouts of 50 emails the
+prompt was never tuned on. Each email was labelled by hand (priority, real
+task?, real event?). RTX 4070 Ti 12 GB.
+
+| Model + prompt | Priority correct (tuning / holdout 1 / holdout 2) | Low mail wrongly promoted (tuning) | Invented tasks (tuning) | Speed |
+|---|---|---|---|---|
+| `qwen3:8b` + old prompt | 0.50 / 0.76 / 0.78 | 55 of 106 | 27 | ~1 s/email |
+| `qwen3:8b` + current prompt | 0.83 / 0.90 / 0.84 | 15 of 106 | 17 | ~1 s/email |
+| **`gemma4:12b` + current prompt** | **0.88 / 0.92 / 0.92** | **12 of 106** | **11** | ~1 s/email |
+
+Most of the gain came from the prompt, which now spells out what is *not*
+important — one-time codes, sign-in alerts, promotions and petitions even when
+they say "urgent", notifications for threads you only follow — and what is
+not a task or event (marketing calls to action, debit dates, offer end dates),
+while keeping real ones (deliveries, pickups, bookings, account deadlines).
+`gemma4:12b` then catches more of the genuinely important mail than `qwen3:8b`
+(21 of 24 vs 17 of 24 on the tuning set). Bigger models were also tried:
+`qwen3.6` scored about the same (0.89 on the tuning set) at 3× the time;
+`gemma4:26b`, `glm-4.7-flash` and `nemotron-3.5-lightning` (old prompt) did
+no better than `qwen3:8b` + current prompt at 3–4× the time; dense 24–27B
+models ran at 9–15 s/email on a 12 GB card.
 
 ### Which folders are indexed
 
