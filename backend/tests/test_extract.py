@@ -3,7 +3,13 @@ from datetime import UTC, datetime, timedelta
 from app.config import settings
 from app.db import get_conn
 from app.extract import (
+    OWN_MAIL_MARK,
+    SYSTEM_PROMPT,
+    Owner,
+    build_user_msg,
     emails_needing_extraction,
+    extract_email,
+    load_owner,
     mark_extraction_failed,
     store_extraction,
 )
@@ -157,3 +163,73 @@ def test_mark_extraction_failed():
     # no longer selected for extraction
     with get_conn() as conn:
         assert emails_needing_extraction(conn) == []
+
+
+def add_mail(conn, file, sender, sender_email):
+    """Insert a minimal email with a sender name and address, return its row."""
+    cur = conn.execute(
+        "INSERT INTO emails(maildir_file, sender, sender_email, subject, date_utc, body) "
+        "VALUES(?, ?, ?, 's', '2026-10-01T10:00:00+00:00', 'body')",
+        (file, sender, sender_email),
+    )
+    return conn.execute(
+        "SELECT * FROM emails WHERE id = ?", (cur.lastrowid,)
+    ).fetchone()
+
+
+class TestOwner:
+    def test_learned_from_sent_folders_english_and_french(self):
+        with get_conn() as conn:
+            add_mail(
+                conn, "Mail/Sent Mail/cur/1.eml", "Alex Martin", "Alex@Example.com"
+            )
+            add_mail(
+                conn, "Local/Envoyés/cur/2.eml", "Alex Martin", "alex@work.example"
+            )
+            add_mail(conn, "Mail/INBOX/cur/3.eml", "Bob", "bob@example.com")
+            owner = load_owner(conn)
+        assert owner.emails == {"alex@example.com", "alex@work.example"}
+        assert owner.names == {"alex martin"}
+
+    def test_matches_address_or_display_name(self):
+        owner = Owner(frozenset({"alex@example.com"}), frozenset({"alex martin"}))
+        with get_conn() as conn:
+            own = add_mail(conn, "a.eml", "Someone", "ALEX@example.com")
+            forwarded = add_mail(conn, "b.eml", "ALEX MARTIN", "alex@other.example")
+            other = add_mail(conn, "c.eml", "Bob", "bob@example.com")
+        assert owner.sent(own) and owner.sent(forwarded)
+        assert not owner.sent(other)
+
+    def test_no_sent_folder_means_nobody(self):
+        with get_conn() as conn:
+            row = add_mail(conn, "Mail/INBOX/cur/1.eml", "Bob", "bob@example.com")
+            owner = load_owner(conn)
+        assert owner == Owner() and not owner.sent(row)
+
+
+class TestOwnMailFlag:
+    def test_mark_matches_prompt_wording(self):
+        assert OWN_MAIL_MARK in SYSTEM_PROMPT
+
+    def test_build_user_msg_prefix(self):
+        with get_conn() as conn:
+            row = add_mail(conn, "a.eml", "Alex", "alex@example.com")
+        assert build_user_msg(row, own=True).startswith(OWN_MAIL_MARK + "\n")
+        assert not build_user_msg(row).startswith(OWN_MAIL_MARK)
+
+    async def test_extract_email_flags_only_owner_mail(self):
+        owner = Owner(frozenset({"alex@example.com"}), frozenset())
+        seen = []
+
+        class FakeOllama:
+            async def chat_json(self, messages, schema=None):
+                seen.append(messages[1]["content"])
+                return {"priority": "low", "tasks": [], "events": []}
+
+        with get_conn() as conn:
+            mine = add_mail(conn, "a.eml", "Alex", "alex@example.com")
+            theirs = add_mail(conn, "b.eml", "Bob", "bob@example.com")
+        await extract_email(FakeOllama(), mine, owner=owner)
+        await extract_email(FakeOllama(), theirs, owner=owner)
+        await extract_email(FakeOllama(), mine)  # no owner known: never flagged
+        assert [m.startswith(OWN_MAIL_MARK) for m in seen] == [True, False, False]

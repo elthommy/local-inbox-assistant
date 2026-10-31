@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from .config import settings
@@ -55,11 +56,11 @@ Most emails are low priority with no tasks and no events. When unsure, choose "l
 priority:
 - "high": a real person or organization asks the recipient specifically for something time-sensitive, or missing it has a real cost (e.g. a technician visit to book to restore a service, an overdue payment, a direct question needing a reply soon).
 - "medium": relevant to the recipient but not urgent: bookings, reservations, order confirmations, appointments already booked, personal messages from real people, security alerts about the recipient's own accounts or code repositories, account expiry deadlines.
-- "low": everything automated or bulk: newsletters, digests, promotions and investment offers (EVEN when they say urgent, last chance, ends tonight, opening in N minutes), petitions and political campaigns, one-time codes, sign-in links, "new sign-in detected" alerts, receipts, bank movement alerts, shipping/delivery notifications (low priority, but their expected delivery date IS an event), notifications about GitHub/forum threads the recipient only follows, and the recipient's own sent emails unless they contain an upcoming appointment.
+- "low": everything automated or bulk: newsletters, digests, promotions and investment offers (EVEN when they say urgent, last chance, ends tonight, opening in N minutes), petitions and political campaigns, one-time codes, sign-in links, account notifications (new sign-in or new connection detected, a device or feature turned on/off, login-method changes, account details updated, terms updates) — the standard "if this wasn't you, secure your account" line does NOT make them important; only an email stating the account WAS compromised or breached is, receipts, bank movement alerts, shipping/delivery notifications (low priority, but their expected delivery date IS an event), notifications about GitHub/forum threads the recipient only follows, and the recipient's own sent emails (the email then starts with "[Sent by the recipient]") unless they contain an upcoming appointment.
 
-tasks: only actions the email asks the RECIPIENT to do that matter if not done (book an appointment, pay, reply, activate a new account, claim/keep/renew something before a deadline, pick up an order, update a vulnerable dependency, bring documents). Short imperative phrasing, in the email's language; "due" = deadline as written, or "". NEVER a marketing call to action (buy, invest, sign, subscribe, download the app, read more, take the survey), never "enter/use this code", never for pure notifications.
+tasks: only actions the email asks the RECIPIENT to do that matter if not done (book an appointment, pay, reply, activate a new account, claim/keep/renew something before a deadline, pick up an order, update a vulnerable dependency, bring documents). Short imperative phrasing, in the email's language; "due" = deadline as written, or "". NEVER a marketing call to action (buy, invest, sign, subscribe, download the app, read more, take the survey), never "enter/use this code", never for pure notifications. Suggestions ("you can...", "if you wish...", "feel free to...") and practical instructions (arrive 15 minutes early, set your password) are not tasks: only what the recipient is required or explicitly asked to do.
 
-events: only appointments, bookings, meetings the recipient is invited to (also when mentioned inside a reply thread), order pickup slots (Drive, click & collect), expected deliveries, trips, and account deadlines (claim/keep/activate before a date) that concern the recipient personally, with "date" as written and "time" as written or "". NOT marketing or campaign events, NOT dates inside receipts, bank statements or bills (debit dates), NOT marketing offer or survey end dates, NOT dates already in the past at the email's date.
+events: only appointments, bookings, meetings the recipient is invited to (also when mentioned inside a reply thread), order pickup slots (Drive, click & collect), expected deliveries, trips, and account deadlines (claim/keep/activate before a date) that concern the recipient personally, with "date" as written and "time" as written or "". An event needs a concrete date (not "within 4-6 days", not a meeting only proposed) and must be something the recipient booked, ordered, was personally invited to, or must attend. NOT events announced to a mailing list (festivals, webinars, AMAs, conferences, campaign meetings, newsletter agendas), NOT social-network birthday reminders (birthdays and events from the recipient's own calendar notifications ARE events), NOT dates inside receipts, bank statements or bills (debit dates), NOT marketing offer or survey end dates, NOT dates already in the past at the email's date.
 
 Examples:
 - "Votre code de vérification est 123456, valable 10 minutes" → {"priority":"low","tasks":[],"events":[]}
@@ -87,22 +88,63 @@ def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def build_user_msg(row: sqlite3.Row) -> str:
-    """Format one email row as the user message of the extraction prompt."""
+# Folders holding the mailbox owner's outgoing mail (Thunderbird/Gmail English
+# and French names); SQLite LIKE is case-insensitive for ASCII.
+SENT_FOLDER_PATTERNS = ("Sent%", "%/Sent%", "Envoy%", "%/Envoy%")
+# Must match the wording of SYSTEM_PROMPT's "own sent emails" rule.
+OWN_MAIL_MARK = "[Sent by the recipient]"
+
+
+@dataclass(frozen=True)
+class Owner:
+    """The mailbox owner's addresses and display names (lower-cased)."""
+
+    emails: frozenset[str] = frozenset()
+    names: frozenset[str] = frozenset()
+
+    def sent(self, row: sqlite3.Row) -> bool:
+        """Whether this email was written by the owner (any of their addresses,
+        or their display name, e.g. a forward from a work account)."""
+        return (row["sender_email"] or "").strip().lower() in self.emails or (
+            row["sender"] or ""
+        ).strip().lower() in self.names
+
+
+def load_owner(conn: sqlite3.Connection) -> Owner:
+    """Learn the owner's identities from the senders of mail in Sent folders."""
+    clause = " OR ".join("maildir_file LIKE ?" for _ in SENT_FOLDER_PATTERNS)
+    rows = conn.execute(
+        f"SELECT DISTINCT sender_email, sender FROM emails WHERE {clause}",
+        SENT_FOLDER_PATTERNS,
+    ).fetchall()
+    emails = {(r["sender_email"] or "").strip().lower() for r in rows}
+    names = {(r["sender"] or "").strip().lower() for r in rows}
+    return Owner(frozenset(emails - {""}), frozenset(names - {""}))
+
+
+def build_user_msg(row: sqlite3.Row, own: bool = False) -> str:
+    """Format one email row as the user message of the extraction prompt.
+
+    own=True marks the owner's sent mail so the prompt's rule can apply.
+    """
     return (
-        f"From: {row['sender']} <{row['sender_email']}>\n"
+        (f"{OWN_MAIL_MARK}\n" if own else "")
+        + f"From: {row['sender']} <{row['sender_email']}>\n"
         f"Subject: {row['subject']}\n"
         f"Date: {row['date_utc']}\n\n"
         f"{row['body'][:4000]}"
     )
 
 
-async def extract_email(ollama: OllamaClient, row: sqlite3.Row) -> dict:
+async def extract_email(
+    ollama: OllamaClient, row: sqlite3.Row, owner: Owner | None = None
+) -> dict:
     """Ask the LLM for priority/tasks/events of one email, as schema-bound JSON."""
+    own = owner is not None and owner.sent(row)
     return await ollama.chat_json(
         [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_msg(row)},
+            {"role": "user", "content": build_user_msg(row, own)},
         ],
         schema=EXTRACTION_SCHEMA,
     )
