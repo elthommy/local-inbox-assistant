@@ -267,23 +267,29 @@ uv run python -m scripts.benchmark_extraction --models qwen3:4b qwen3:8b
 
 #### Why gemma4:12b for parsing
 
-Measured on 230 hand-checked emails from a real, mostly French mailbox:
-130 used to tune the extraction prompt, plus two holdouts of 50 emails the
-prompt was never tuned on. Each email was labelled by hand (priority, real
-task?, real event?). RTX 4070 Ti 12 GB.
+Measured on 280 hand-checked emails from a real, mostly French mailbox:
+130 used to tune the extraction prompt, plus three holdouts of 50 emails the
+prompt was not tuned on (holdout 3 was drawn fresh for the latest prompt
+revision). Each email was labelled by hand (priority, real task?, real
+event?). RTX 4070 Ti 12 GB.
 
-| Model + prompt | Priority correct (tuning / holdout 1 / holdout 2) | Low mail wrongly promoted (tuning) | Invented tasks (tuning) | Speed |
+| Model + prompt | Priority correct (tuning / holdout 1 / 2 / 3) | Low mail wrongly promoted (tuning) | Invented tasks (tuning) | Speed |
 |---|---|---|---|---|
-| `qwen3:8b` + old prompt | 0.50 / 0.76 / 0.78 | 55 of 106 | 27 | ~1 s/email |
-| `qwen3:8b` + current prompt | 0.83 / 0.90 / 0.84 | 15 of 106 | 17 | ~1 s/email |
-| **`gemma4:12b` + current prompt** | **0.88 / 0.92 / 0.92** | **12 of 106** | **11** | ~1 s/email |
+| `qwen3:8b` + original prompt | 0.50 / 0.76 / 0.78 / – | 55 of 106 | 27 | ~1 s/email |
+| `gemma4:12b` + first stricter prompt | 0.88 / 0.92 / 0.92 / 0.78 | 12 of 106 | 11 | ~1 s/email |
+| **`gemma4:12b` + current prompt** | **0.93 / 0.94 / 0.96 / 0.86** | **3 of 106** | **6** | ~1 s/email |
 
 Most of the gain came from the prompt, which now spells out what is *not*
-important — one-time codes, sign-in alerts, promotions and petitions even when
-they say "urgent", notifications for threads you only follow — and what is
-not a task or event (marketing calls to action, debit dates, offer end dates),
-while keeping real ones (deliveries, pickups, bookings, account deadlines).
-`gemma4:12b` then catches more of the genuinely important mail than `qwen3:8b`
+important — one-time codes, sign-in and account notifications (even with
+the usual "if this wasn't you" line), promotions and petitions even when
+they say "urgent", notifications for threads you only follow, your own sent
+mail — and what is not a task or event (marketing calls to action,
+suggestions, debit dates, offer end dates, mass-mailed events), while
+keeping real ones (deliveries, pickups, bookings, account deadlines, your
+own calendar). Your own sent mail is recognised automatically: the
+addresses and display names seen in your Sent folder(s) mark matching
+emails as "sent by the recipient" for the model.
+`gemma4:12b` also catches more of the genuinely important mail than `qwen3:8b`
 (21 of 24 vs 17 of 24 on the tuning set). Bigger models were also tried:
 `qwen3.6` scored about the same (0.89 on the tuning set) at 3× the time;
 `gemma4:26b`, `glm-4.7-flash` and `nemotron-3.5-lightning` (old prompt) did

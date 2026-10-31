@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## Session start: read the roadmap
+
+Work here is often interrupted and resumed in a new session. Start every
+session by reading [`docs/ROADMAP.md`](docs/ROADMAP.md) (what is in
+progress, what is next) and keep it updated as items start, change or
+finish. Never put personal data from the mailbox in it — the repo is public.
+
 ## Security model
 
 - **Trust boundary:** single-user app on the user's own machine. The backend

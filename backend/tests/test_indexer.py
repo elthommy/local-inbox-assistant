@@ -72,7 +72,7 @@ async def test_full_run_parses_embeds_extracts(fake_embed, monkeypatch):
 
     extract_models = []
 
-    async def fake_extract(ollama, row):
+    async def fake_extract(ollama, row, owner=None):
         extract_models.append(ollama.model)
         return {
             "priority": "high" if row["subject"] == "invoice" else "low",
@@ -103,7 +103,7 @@ async def test_rerun_is_incremental(fake_embed, monkeypatch):
     make_eml("one.eml", days_ago=2)
     calls = []
 
-    async def fake_extract(ollama, row):
+    async def fake_extract(ollama, row, owner=None):
         calls.append(row["maildir_file"])
         return {"priority": "low", "tasks": [], "events": []}
 
@@ -150,7 +150,7 @@ async def test_skip_extraction_flag(fake_embed):
 async def test_extraction_failure_marks_email_done(fake_embed, monkeypatch):
     make_eml("bad.eml", days_ago=1)
 
-    async def broken_extract(ollama, row):
+    async def broken_extract(ollama, row, owner=None):
         raise RuntimeError("llm exploded")
 
     monkeypatch.setattr(indexer, "extract_email", broken_extract)
@@ -211,7 +211,7 @@ def _fake_ollama_models(monkeypatch, installed, pulls):
     monkeypatch.setattr(OllamaClient, "pull", pull)
 
 
-async def _ok_extract(ollama, row):
+async def _ok_extract(ollama, row, owner=None):
     """Minimal successful extraction result."""
     return {"priority": "medium", "tasks": [], "events": []}
 

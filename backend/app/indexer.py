@@ -16,6 +16,7 @@ from .db import get_conn, set_meta
 from .extract import (
     emails_needing_extraction,
     extract_email,
+    load_owner,
     mark_extraction_failed,
     store_extraction,
 )
@@ -208,12 +209,13 @@ async def _extract_pending(ollama: OllamaClient) -> None:
     """Run LLM extraction (priority/tasks/events) on emails that need it."""
     with get_conn() as conn:
         pending = emails_needing_extraction(conn)
+        owner = load_owner(conn)
     if pending:
         await _ensure_model(ollama.model)
     progress.update(phase="extracting", done=0, total=len(pending))
     for i, row in enumerate(pending):
         try:
-            result = await extract_email(ollama, row)
+            result = await extract_email(ollama, row, owner=owner)
             with get_conn() as conn:
                 store_extraction(conn, row["id"], result)
         except Exception:
