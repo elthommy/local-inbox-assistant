@@ -9,6 +9,16 @@ from ..config import settings
 from .errors import UserFacingError
 
 
+def model_pulled(model: str, pulled: list[str]) -> bool:
+    """Whether a model name (with or without tag) is among the pulled models."""
+    return any(m == model or m.startswith(model + ":") for m in pulled)
+
+
+def not_pulled_message(model: str) -> str:
+    """User-facing hint for a model missing from the Ollama server."""
+    return f"model {model} is not pulled in Ollama — run `ollama pull {model}`"
+
+
 class OllamaClient:
     name = "ollama"
 
@@ -63,6 +73,27 @@ class OllamaClient:
                 for m in r.json().get("models", [])
             ]
 
+    async def pull(self, model: str, on_progress=None) -> None:
+        """Download a model via Ollama's streaming /api/pull.
+
+        on_progress(completed_bytes, total_bytes) is called per status line
+        that carries sizes (one layer at a time).
+        """
+        timeout = httpx.Timeout(300, connect=10)  # read timeout = stall guard
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", f"{self.base_url}/api/pull", json={"model": model}
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    if err := data.get("error"):
+                        raise UserFacingError(f"ollama pull {model}: {err}")
+                    if on_progress and data.get("total"):
+                        on_progress(data.get("completed", 0), data["total"])
+
     async def chat_stream(self, messages: list[dict]) -> AsyncIterator[str]:
         """Yield the model's answer as text chunks (thinking disabled)."""
         payload = {"model": self.model, "messages": messages, "stream": True}
@@ -72,6 +103,8 @@ class OllamaClient:
             async with client.stream(
                 "POST", f"{self.base_url}/api/chat", json=payload
             ) as resp:
+                if resp.status_code == 404:  # Ollama: model not found
+                    raise UserFacingError(not_pulled_message(self.model))
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line.strip():

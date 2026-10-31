@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from app import indexer, rag
 from app.config import settings
 from app.db import get_conn, get_meta
+from app.llm.ollama import OllamaClient
 from app.mail import maildir as indexer_maildir
 
 
@@ -187,3 +188,74 @@ async def test_parse_failure_is_tolerated(fake_embed, monkeypatch):
             r["maildir_file"] for r in conn.execute("SELECT maildir_file FROM emails")
         ]
     assert files == ["good.eml"]
+
+
+REAL_ENSURE_MODEL = indexer._ensure_model
+
+
+def _fake_ollama_models(monkeypatch, installed, pulls):
+    """Pretend Ollama has `installed` models; record pull() calls in `pulls`."""
+
+    async def list_models(self):
+        """Installed model names."""
+        return list(installed)
+
+    async def pull(self, model, on_progress=None):
+        """Record the pull and report one finished layer."""
+        pulls.append(model)
+        on_progress(5, 5)
+        installed.append(model)
+
+    monkeypatch.setattr(indexer, "_ensure_model", REAL_ENSURE_MODEL)
+    monkeypatch.setattr(OllamaClient, "list_models", list_models)
+    monkeypatch.setattr(OllamaClient, "pull", pull)
+
+
+async def _ok_extract(ollama, row):
+    """Minimal successful extraction result."""
+    return {"priority": "medium", "tasks": [], "events": []}
+
+
+async def test_missing_models_are_pulled_when_auto_pull(fake_embed, monkeypatch):
+    make_eml("one.eml", days_ago=1)
+    pulls = []
+    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    monkeypatch.setattr(settings, "auto_pull", True)
+    monkeypatch.setattr(indexer, "extract_email", _ok_extract)
+    await indexer.run_index(do_extract=True)
+    assert pulls == [settings.extraction_model]  # embed model already present
+    assert indexer.progress["phase"] == "idle"
+    with get_conn() as conn:
+        row = conn.execute("SELECT priority, extracted FROM emails").fetchone()
+        assert (row["priority"], row["extracted"]) == ("medium", 1)
+
+
+async def test_missing_model_without_auto_pull_stops_run(fake_embed, monkeypatch):
+    make_eml("one.eml", days_ago=1)
+    pulls = []
+    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    monkeypatch.setattr(settings, "auto_pull", False)
+    monkeypatch.setattr(indexer, "extract_email", _ok_extract)
+    await indexer.run_index(do_extract=True)
+    assert pulls == []
+    assert indexer.progress["phase"] == "error"
+    assert f"ollama pull {settings.extraction_model}" in indexer.progress["error"]
+    with get_conn() as conn:
+        # not marked extracted with a default priority: a later run retries
+        row = conn.execute("SELECT extracted FROM emails").fetchone()
+        assert row["extracted"] == 0
+
+
+async def test_no_model_check_when_nothing_to_extract(fake_embed, monkeypatch):
+    calls = []
+
+    async def list_models(self):
+        """Fail loudly if the model list is consulted."""
+        calls.append(self.model)
+        return []
+
+    monkeypatch.setattr(indexer, "_ensure_model", REAL_ENSURE_MODEL)
+    monkeypatch.setattr(OllamaClient, "list_models", list_models)
+    await indexer.run_index(do_extract=True)  # empty maildir
+    assert calls == []
+    assert indexer.progress["phase"] == "idle"
