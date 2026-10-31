@@ -78,12 +78,17 @@ def _store_parsed(parsed: list[dict]) -> list[int]:
     return new_ids
 
 
-async def run_index(do_extract: bool = True) -> None:
-    """Run one indexing pass unless one is already in progress."""
+async def run_index(do_extract: bool = True, pull: list[str] | None = None) -> None:
+    """Run one indexing pass unless one is already in progress.
+
+    `pull`: models to download first (the user confirmed it in the UI).
+    """
     if _lock.locked():
         return
     async with _lock:
         try:
+            for model in pull or []:
+                await _pull(OllamaClient(model), model)
             await _run(do_extract)
         except Exception as exc:  # surfaced in /api/status
             log.exception("indexing failed")
@@ -102,20 +107,30 @@ async def _run(do_extract: bool) -> None:
 
 
 async def _ensure_model(model: str) -> None:
-    """Make sure `model` is pulled, downloading it when INBOX_AUTO_PULL is on.
+    """Make sure `model` is pulled, downloading it if INBOX_AUTO_PULL=always.
 
     Raising here aborts the run (phase "error") before any email is touched,
-    so a missing model never marks emails as extracted-with-defaults.
+    so a missing model never marks emails as extracted-with-defaults. In
+    "ask" mode the UI then offers the download (POST /api/models/pull).
     """
     client = OllamaClient(model)
     if model_pulled(model, await client.list_models()):
         return
-    if not settings.auto_pull:
-        raise UserFacingError(
-            f"{not_pulled_message(model)} (or set INBOX_AUTO_PULL=true)"
-        )
-    log.info("model %s missing, pulling it", model)
-    progress.update(phase="pulling", model=model, done=0, total=0)
+    if settings.auto_pull == "always":
+        await _pull(client, model)
+        return
+    hint = (
+        "download it from the app"
+        if settings.auto_pull == "ask"
+        else "set INBOX_AUTO_PULL=always"
+    )
+    raise UserFacingError(f"{not_pulled_message(model)} (or {hint})")
+
+
+async def _pull(client: OllamaClient, model: str) -> None:
+    """Download `model`, publishing byte progress as the "pulling" phase."""
+    log.info("pulling model %s", model)
+    progress.update(phase="pulling", model=model, done=0, total=0, error=None)
 
     def on_progress(done: int, total: int) -> None:
         """Publish download progress of the current layer."""

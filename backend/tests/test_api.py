@@ -87,6 +87,8 @@ class TestStatus:
         assert data["ollama"]["extraction_model_pulled"] is True
         # embedding models are filtered out of the selectable list
         assert data["ollama"]["models"] == [{"name": "qwen3:8b", "size": 5_200_000_000}]
+        assert data["ollama"]["auto_pull"] == settings.auto_pull
+        assert data["ollama"]["missing_models"] == []
         assert data["claude"] == {"configured": False, "model": settings.claude_model}
         assert data["chat_provider"] == "ollama"
         assert data["index"]["emails"] == 0
@@ -604,3 +606,67 @@ class TestCrossOriginProtection:
         r = client.get("/api/stats", headers={"origin": "https://evil.example"})
         assert r.status_code == 200
         assert "access-control-allow-origin" not in r.headers
+
+
+class TestModelPull:
+    @pytest.fixture
+    def pulled(self, monkeypatch):
+        """Set the models Ollama reports as pulled; record started runs."""
+        state = {"models": [], "runs": []}
+
+        async def list_models(self):
+            return state["models"]
+
+        async def available(self):
+            return True
+
+        async def models_info(self):
+            return [{"name": m, "size": 1} for m in state["models"]]
+
+        async def fake_run_index(do_extract=True, pull=None):
+            state["runs"].append(pull)
+
+        monkeypatch.setattr(OllamaClient, "list_models", list_models)
+        monkeypatch.setattr(OllamaClient, "available", available)
+        monkeypatch.setattr(OllamaClient, "list_models_info", models_info)
+        monkeypatch.setattr(api_module.indexer, "run_index", fake_run_index)
+        monkeypatch.setattr(settings, "chat_provider", "ollama")
+        monkeypatch.setattr(settings, "chat_model", "qwen3:8b")
+        monkeypatch.setattr(settings, "extraction_model", "qwen3:8b")
+        monkeypatch.setattr(settings, "embed_model", "nomic-embed-text")
+        return state
+
+    def test_status_lists_missing_models_once(self, client, pulled):
+        pulled["models"] = ["nomic-embed-text:latest"]
+        data = client.get("/api/status").json()
+        assert data["ollama"]["missing_models"] == ["qwen3:8b"]  # chat == extraction
+
+    def test_chat_model_ignored_when_claude_answers(self, client, pulled, monkeypatch):
+        pulled["models"] = ["nomic-embed-text:latest", "qwen3:8b"]
+        monkeypatch.setattr(settings, "chat_provider", "claude")
+        monkeypatch.setattr(settings, "chat_model", "gemma4:12b")
+        data = client.get("/api/status").json()
+        assert data["ollama"]["missing_models"] == []
+
+    def test_pull_starts_run_with_missing_models(self, client, pulled):
+        pulled["models"] = ["qwen3:8b"]
+        r = client.post("/api/models/pull").json()
+        assert r == {"started": True, "missing": ["nomic-embed-text"]}
+        assert pulled["runs"] == [["nomic-embed-text"]]
+
+    def test_pull_noop_when_nothing_missing(self, client, pulled):
+        pulled["models"] = ["qwen3:8b", "nomic-embed-text:latest"]
+        assert client.post("/api/models/pull").json() == {
+            "started": False,
+            "missing": [],
+        }
+        assert pulled["runs"] == []
+
+    def test_pull_refused_while_indexing(self, client, pulled, monkeypatch):
+        monkeypatch.setitem(api_module.indexer.progress, "phase", "embedding")
+        assert client.post("/api/models/pull").json()["started"] is False
+        assert pulled["runs"] == []
+
+    def test_pull_blocked_cross_site(self, client, pulled):
+        r = client.post("/api/models/pull", headers={"origin": "https://evil.example"})
+        assert r.status_code == 403

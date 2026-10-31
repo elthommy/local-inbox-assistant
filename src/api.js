@@ -32,6 +32,7 @@ export const api = {
   updateSettings: (values) => postJSON('/settings', values),
   reindex: () => postJSON('/reindex'),
   reextract: () => postJSON('/reextract'),
+  pullModels: () => postJSON('/models/pull'),
 }
 
 /**
