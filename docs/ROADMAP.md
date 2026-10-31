@@ -11,7 +11,7 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-- **Extraction prompt v4.1** — PR open (branch `feat/extraction-prompt-v41`),
+- **Extraction prompt v4.1** — PR #52 (branch `feat/extraction-prompt-v41`),
   awaiting merge. After merge: re-parse recent emails in the app.
   Four fixes from an error analysis on the hand-checked set (A: events need
   a concrete date and a personal booking/invitation; B: the recipient's own
