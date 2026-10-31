@@ -24,3 +24,10 @@ def test_auto_pull_defaults_to_ask():
 def test_auto_pull_rejects_unknown_value():
     with pytest.raises(ValueError):
         Settings(_env_file=None, auto_pull="sometimes")
+
+
+def test_default_models():
+    # extraction default chosen by the 2026-10-31 benchmark (README "Changing models")
+    defaults = Settings(_env_file=None)
+    assert defaults.extraction_model == "gemma4:12b"
+    assert defaults.chat_model == "qwen3:8b"
