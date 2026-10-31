@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 import anthropic
 
 from ..config import settings
+from .errors import UserFacingError
 
 NOT_CONFIGURED_MESSAGE = (
     "Claude (cloud) is not configured — set INBOX_ANTHROPIC_API_KEY in "
@@ -57,7 +58,7 @@ class ClaudeClient:
     async def chat_stream(self, messages: list[dict]) -> AsyncIterator[str]:
         """Yield the answer as text chunks (adaptive thinking, not streamed)."""
         if not self.configured():
-            raise RuntimeError(NOT_CONFIGURED_MESSAGE)
+            raise UserFacingError(NOT_CONFIGURED_MESSAGE)
         system, turns = split_system(messages)
         try:
             async with self._client() as client:
@@ -71,6 +72,6 @@ class ClaudeClient:
                     async for text in stream.text_stream:
                         yield text
         except anthropic.AuthenticationError as exc:
-            raise RuntimeError(
+            raise UserFacingError(
                 "Anthropic rejected the API key — check INBOX_ANTHROPIC_API_KEY."
             ) from exc

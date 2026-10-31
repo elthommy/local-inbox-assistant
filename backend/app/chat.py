@@ -10,6 +10,7 @@ from . import rag
 from .config import settings
 from .db import get_conn, triage_filter
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
+from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient
 
 SYSTEM_NO_CONTEXT = """\
@@ -158,7 +159,7 @@ async def stream_answer(
         llm = ClaudeClient()
         if not llm.configured():
             # fail before doing any retrieval work
-            raise RuntimeError(NOT_CONFIGURED_MESSAGE)
+            raise UserFacingError(NOT_CONFIGURED_MESSAGE)
     else:
         llm = ollama
     messages = await build_messages(ollama, history, use_context, email_id)

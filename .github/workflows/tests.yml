@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
 
+# Least-privilege GITHUB_TOKEN: the jobs only need to check out code.
+permissions:
+  contents: read
+
 # A new push to the same branch cancels the previous, still-running job.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

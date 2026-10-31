@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 import app.api as api_module
 import app.main as main_module
 from app.config import settings
+from app.llm.errors import UserFacingError
 from app.llm.ollama import OllamaClient
 
 
@@ -461,6 +463,33 @@ class TestChat:
         assert "event: error" in r.text
         assert "not configured" in r.text
 
+    def test_unexpected_error_message_not_leaked(self, client, monkeypatch):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
+            raise ValueError("secret internal detail /home/x/db.sqlite")
+            yield  # pragma: no cover  (makes this an async generator)
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "ollama"},
+        )
+        assert "event: error" in r.text
+        assert "secret internal detail" not in r.text
+        assert api_module.CHAT_FAILED_MESSAGE in r.text
+
+    def test_ollama_unreachable_gets_fixed_message(self, client, monkeypatch):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
+            raise httpx.ConnectError("All connection attempts failed")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "ollama"},
+        )
+        assert api_module.OLLAMA_UNREACHABLE_MESSAGE in r.text
+        assert "All connection attempts" not in r.text
+
     def test_rejects_unknown_model(self, client):
         r = client.post(
             "/api/chat",
@@ -523,7 +552,7 @@ class TestChat:
     def test_stream_failure_emits_error_event(self, client, monkeypatch):
         async def broken(history, use_context, email_id=None, provider="ollama"):
             yield "partial"
-            raise RuntimeError("ollama died")
+            raise UserFacingError("ollama died")
 
         monkeypatch.setattr(api_module, "stream_answer", broken)
         r = client.post(

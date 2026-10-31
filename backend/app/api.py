@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ from .chat import stream_answer
 from .config import BACKEND_DIR, settings
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .llm.claude import ClaudeClient
+from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient
 from .mail.render import render_email
 
@@ -343,6 +345,17 @@ async def reextract():
     return {"started": True, "reset": reset}
 
 
+CHAT_FAILED_MESSAGE = "Chat failed - see the backend log for details."
+OLLAMA_UNREACHABLE_MESSAGE = (
+    "Could not reach Ollama - is it running? See the backend log for details."
+)
+
+
+def _sse_error(message: str) -> str:
+    """Format an SSE error event carrying a user-facing message."""
+    return f"event: error\ndata: {json.dumps({'message': message})}\n\n"
+
+
 class ChatRequest(BaseModel):
     messages: list[dict]  # [{role, content}], last one is the new user message
     model: str = Field(default="ollama", pattern="^(ollama|claude)$")
@@ -365,9 +378,16 @@ async def chat(req: ChatRequest):
             ):
                 yield f"data: {json.dumps({'token': chunk})}\n\n"
             yield "event: done\ndata: {}\n\n"
-        except Exception as exc:
+        except UserFacingError as exc:
+            log.warning("chat failed: %s", exc)
+            yield _sse_error(str(exc))
+        except httpx.HTTPError:
             log.exception("chat failed")
-            yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+            yield _sse_error(OLLAMA_UNREACHABLE_MESSAGE)
+        except Exception:
+            # never forward raw exception text (internals) to the browser
+            log.exception("chat failed")
+            yield _sse_error(CHAT_FAILED_MESSAGE)
 
     return StreamingResponse(
         sse(),
