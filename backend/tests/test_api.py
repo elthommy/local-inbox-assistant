@@ -18,7 +18,8 @@ def client(monkeypatch):
 
     # keep startup from indexing (and from touching Ollama) during API tests
     monkeypatch.setattr(main_module, "run_index", no_index)
-    with TestClient(main_module.app) as c:
+    # Host must be loopback (TrustedHostMiddleware)
+    with TestClient(main_module.app, base_url="http://localhost") as c:
         yield c
 
 
@@ -562,3 +563,44 @@ class TestChat:
         assert 'data: {"token": "partial"}' in r.text
         assert "event: error" in r.text
         assert "ollama died" in r.text
+
+
+class TestCrossOriginProtection:
+    def test_foreign_host_rejected(self, client):
+        # DNS rebinding: the browser sends the attacker's domain as Host
+        r = client.get("/api/emails", headers={"host": "rebind.attacker.com:8000"})
+        assert r.status_code == 400
+
+    def test_loopback_hosts_allowed(self, client):
+        for host in ("localhost:8000", "127.0.0.1:8000"):
+            assert client.get("/api/stats", headers={"host": host}).status_code == 200
+
+    def test_cross_site_post_blocked(self, client):
+        r = client.post(
+            "/api/emails/1/dismiss", headers={"origin": "https://evil.example"}
+        )
+        assert r.status_code == 403
+
+    def test_null_origin_post_blocked(self, client):
+        r = client.post("/api/reindex", headers={"origin": "null"})
+        assert r.status_code == 403
+
+    def test_sec_fetch_site_cross_site_blocked(self, client):
+        r = client.post("/api/tasks/1/toggle", headers={"sec-fetch-site": "cross-site"})
+        assert r.status_code == 403
+
+    def test_localhost_origin_post_allowed(self, client):
+        r = client.post(
+            "/api/emails/999999/dismiss",
+            headers={
+                "origin": "http://localhost:5173",
+                "sec-fetch-site": "same-origin",
+            },
+        )
+        assert r.status_code == 404  # reached the handler (no such email)
+
+    def test_cross_site_get_still_served(self, client):
+        # reads are protected by CORS (response unreadable cross-site)
+        r = client.get("/api/stats", headers={"origin": "https://evil.example"})
+        assert r.status_code == 200
+        assert "access-control-allow-origin" not in r.headers
