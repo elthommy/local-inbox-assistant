@@ -4,8 +4,8 @@ import remarkGfm from 'remark-gfm'
 import { api, streamChat } from './api.js'
 import { DATE_FORMATS, avatarColor, eventChipDate, eventGroupLabel, formatEmailTime, groupUpcomingEvents, nowTime, priorityColor, relativeTime } from './utils.js'
 
-// links inside rendered emails are untrusted: open in a new tab, never hand
-// the mail page a window.opener
+// links inside rendered emails (and LLM answers) are untrusted: open in a
+// new tab, never hand the mail page a window.opener
 const EMAIL_MD_COMPONENTS = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 }
@@ -222,7 +222,15 @@ function ChatPane({ chatModel, models, provider, claudeConfigured, claudeModel, 
                   whiteSpace: isUser ? 'pre-wrap' : 'normal',
                 }}
               >
-                {isUser ? m.text : <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown>}
+                {isUser ? (
+                  m.text
+                ) : (
+                  // LLM output may echo prompt-injected email content: no images
+                  // (a zero-click exfiltration channel), safe links only
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} disallowedElements={['img']} components={EMAIL_MD_COMPONENTS}>
+                    {m.text}
+                  </ReactMarkdown>
+                )}
               </div>
             </div>
           )

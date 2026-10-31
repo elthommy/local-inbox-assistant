@@ -1,11 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 import app.api as api_module
 import app.main as main_module
 from app.config import settings
+from app.llm.errors import UserFacingError
 from app.llm.ollama import OllamaClient
 
 
@@ -16,7 +18,8 @@ def client(monkeypatch):
 
     # keep startup from indexing (and from touching Ollama) during API tests
     monkeypatch.setattr(main_module, "run_index", no_index)
-    with TestClient(main_module.app) as c:
+    # Host must be loopback (TrustedHostMiddleware)
+    with TestClient(main_module.app, base_url="http://localhost") as c:
         yield c
 
 
@@ -461,6 +464,33 @@ class TestChat:
         assert "event: error" in r.text
         assert "not configured" in r.text
 
+    def test_unexpected_error_message_not_leaked(self, client, monkeypatch):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
+            raise ValueError("secret internal detail /home/x/db.sqlite")
+            yield  # pragma: no cover  (makes this an async generator)
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "ollama"},
+        )
+        assert "event: error" in r.text
+        assert "secret internal detail" not in r.text
+        assert api_module.CHAT_FAILED_MESSAGE in r.text
+
+    def test_ollama_unreachable_gets_fixed_message(self, client, monkeypatch):
+        async def fake_answer(history, use_context, email_id=None, provider="ollama"):
+            raise httpx.ConnectError("All connection attempts failed")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(api_module, "stream_answer", fake_answer)
+        r = client.post(
+            "/api/chat",
+            json={"messages": [{"role": "user", "content": "hi"}], "model": "ollama"},
+        )
+        assert api_module.OLLAMA_UNREACHABLE_MESSAGE in r.text
+        assert "All connection attempts" not in r.text
+
     def test_rejects_unknown_model(self, client):
         r = client.post(
             "/api/chat",
@@ -523,7 +553,7 @@ class TestChat:
     def test_stream_failure_emits_error_event(self, client, monkeypatch):
         async def broken(history, use_context, email_id=None, provider="ollama"):
             yield "partial"
-            raise RuntimeError("ollama died")
+            raise UserFacingError("ollama died")
 
         monkeypatch.setattr(api_module, "stream_answer", broken)
         r = client.post(
@@ -533,3 +563,44 @@ class TestChat:
         assert 'data: {"token": "partial"}' in r.text
         assert "event: error" in r.text
         assert "ollama died" in r.text
+
+
+class TestCrossOriginProtection:
+    def test_foreign_host_rejected(self, client):
+        # DNS rebinding: the browser sends the attacker's domain as Host
+        r = client.get("/api/emails", headers={"host": "rebind.attacker.com:8000"})
+        assert r.status_code == 400
+
+    def test_loopback_hosts_allowed(self, client):
+        for host in ("localhost:8000", "127.0.0.1:8000"):
+            assert client.get("/api/stats", headers={"host": host}).status_code == 200
+
+    def test_cross_site_post_blocked(self, client):
+        r = client.post(
+            "/api/emails/1/dismiss", headers={"origin": "https://evil.example"}
+        )
+        assert r.status_code == 403
+
+    def test_null_origin_post_blocked(self, client):
+        r = client.post("/api/reindex", headers={"origin": "null"})
+        assert r.status_code == 403
+
+    def test_sec_fetch_site_cross_site_blocked(self, client):
+        r = client.post("/api/tasks/1/toggle", headers={"sec-fetch-site": "cross-site"})
+        assert r.status_code == 403
+
+    def test_localhost_origin_post_allowed(self, client):
+        r = client.post(
+            "/api/emails/999999/dismiss",
+            headers={
+                "origin": "http://localhost:5173",
+                "sec-fetch-site": "same-origin",
+            },
+        )
+        assert r.status_code == 404  # reached the handler (no such email)
+
+    def test_cross_site_get_still_served(self, client):
+        # reads are protected by CORS (response unreadable cross-site)
+        r = client.get("/api/stats", headers={"origin": "https://evil.example"})
+        assert r.status_code == 200
+        assert "access-control-allow-origin" not in r.headers

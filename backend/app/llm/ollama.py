@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import httpx
 
 from ..config import settings
+from .errors import UserFacingError
 
 
 class OllamaClient:
@@ -77,7 +78,7 @@ class OllamaClient:
                         continue
                     data = json.loads(line)
                     if err := data.get("error"):
-                        raise RuntimeError(f"ollama: {err}")
+                        raise UserFacingError(f"ollama: {err}")
                     chunk = data.get("message", {}).get("content", "")
                     if chunk:
                         yield chunk
@@ -100,7 +101,7 @@ class OllamaClient:
             r.raise_for_status()
             data = r.json()
             if err := data.get("error"):
-                raise RuntimeError(f"ollama: {err}")
+                raise UserFacingError(f"ollama: {err}")
             return json.loads(data["message"]["content"])
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
@@ -113,5 +114,5 @@ class OllamaClient:
             r.raise_for_status()
             data = r.json()
             if err := data.get("error"):
-                raise RuntimeError(f"ollama: {err}")
+                raise UserFacingError(f"ollama: {err}")
             return data["embeddings"]
