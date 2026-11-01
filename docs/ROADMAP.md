@@ -15,8 +15,7 @@ Nothing running. App is up (`./start.sh`), no Ollama model loaded.
 
 ## Next
 
-1. **Open the PR** for branch `feat/extraction-v5-my-priorities` (prompt v5 +
-   "My priorities", committed locally, not pushed yet).
+1. **Review / merge #54** (prompt v5 + "My priorities").
 2. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
    personal rule set in "My priorities").
 
@@ -39,7 +38,7 @@ Nothing running. App is up (`./start.sh`), no Ollama model loaded.
 
 ## Done
 
-- 2026-11-01 — extraction prompt **v5** (automated order / status / shipping
+- 2026-11-01 — #54 extraction prompt **v5** (automated order / status / shipping
   mail low, plain delivery dates no longer events, pickups and replies
   written by people stay medium; invented events 8/4/2/7 → 2/0/0/2 on 280
   emails with 11 labels revised) and **"My priorities"** (settings drawer
