@@ -79,10 +79,13 @@ def _store_parsed(parsed: list[dict]) -> list[int]:
     return new_ids
 
 
-async def run_index(do_extract: bool = True, pull: list[str] | None = None) -> None:
+async def run_index(
+    do_extract: bool = True, pull: list[str] | None = None, do_embed: bool = True
+) -> None:
     """Run one indexing pass unless one is already in progress.
 
     `pull`: models to download first (the user confirmed it in the UI).
+    `do_embed=False` skips embedding (scripts.seed_demo --skip-embed).
     """
     if _lock.locked():
         return
@@ -90,7 +93,7 @@ async def run_index(do_extract: bool = True, pull: list[str] | None = None) -> N
         try:
             for model in pull or []:
                 await _pull(OllamaClient(model), model)
-            await _run(do_extract)
+            await _run(do_extract, do_embed)
         except Exception as exc:  # surfaced in /api/status
             log.exception("indexing failed")
             progress.update(phase="error", error=str(exc))
@@ -98,10 +101,11 @@ async def run_index(do_extract: bool = True, pull: list[str] | None = None) -> N
             progress.update(phase="idle", error=None)
 
 
-async def _run(do_extract: bool) -> None:
+async def _run(do_extract: bool, do_embed: bool = True) -> None:
     """Execute the indexing phases in order: scan/parse, embed, extract."""
     await _scan_and_parse()
-    await _embed_pending(OllamaClient())
+    if do_embed:
+        await _embed_pending(OllamaClient())
     if do_extract:
         await _extract_pending(OllamaClient(settings.extraction_model))
     _mark_indexed()
