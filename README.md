@@ -16,10 +16,10 @@ Indexing, extraction, and embeddings always stay local.
 
 ## Demo
 
-[![20-second demo: 27 emails triaged down to the 7 that matter, tasks, the week's events, and chat answers in English and French](docs/media/demo-poster.jpg)](docs/media/demo.mp4)
+https://github.com/user-attachments/assets/6164f884-f007-4803-87e3-92f47c8853b0
 
-*20 s, synthetic mailbox ([how it was made](docs/demo-scenario.md)): click to
-play. In the video, priorities, tasks and events are the demo's canned
+*20 s, synthetic mailbox ([how it was made](docs/demo-scenario.md); no player?
+[open the MP4](docs/media/demo.mp4)). In the video, priorities, tasks and events are the demo's canned
 extraction results and chat answers are scripted; in real use a local model
 produces both. Music: "Happy Beats / Business Moves Vol. 9" by Sascha Ende,
 [ende.app](https://ende.app) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).*
