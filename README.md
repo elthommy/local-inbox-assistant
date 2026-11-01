@@ -174,7 +174,7 @@ mail root path, excluded folders, indexing window, model names, Ollama URL.
 ### Demo mode (synthetic mailbox)
 
 To try the app — or take screenshots — without pointing it at real mail, seed a
-self-contained demo mailbox of 17 invented emails (English and French, with
+self-contained demo mailbox of 27 invented emails (English and French, with
 tasks, events and priorities already attached):
 
 ```bash
@@ -182,13 +182,20 @@ cd backend
 uv run python -m scripts.seed_demo --reset
 ```
 
-Everything lands in `backend/data/demo/` and the real index is never touched.
-The normal scan → parse → embed pipeline runs, so chat and RAG work against the
-synthetic corpus; only the LLM extraction pass is skipped, since the corpus
-ships its own canned results (fast and reproducible). Embedding still needs
-Ollama running. The script prints the exact command to launch the app against
-the demo data — it sets `INBOX_MAILDIR`, `INBOX_DB_PATH` and `INBOX_CHROMA_PATH`
-so the demo and the real index stay entirely separate.
+Everything lands in `backend/data/demo/` (or `--dir PATH`) and the real index
+is never touched. The normal scan → parse → embed pipeline runs, so chat and
+RAG work against the synthetic corpus; only the LLM extraction pass is
+skipped, since the corpus ships its own canned results (fast and
+reproducible). Dates in the corpus are relative to the seeding day, so it
+never looks stale. Embedding needs Ollama running. The script prints the exact
+command to launch the app against the demo data — it sets `INBOX_MAILDIR`,
+`INBOX_DB_PATH` and `INBOX_CHROMA_PATH` so the demo and the real index stay
+entirely separate.
+
+Without Ollama (e.g. to record a video on another machine), seed with
+`--skip-embed` and serve it with `uv run python -m scripts.demo_server`: chat
+then answers a few scripted questions. See
+[docs/demo-scenario.md](docs/demo-scenario.md).
 
 ### Changing models
 

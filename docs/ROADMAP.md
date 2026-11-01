@@ -11,7 +11,11 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-Nothing running. App is up (`./start.sh`), no Ollama model loaded.
+- **Demo data for the launch video** (branch `demo-video-data`, not merged):
+  27-email corpus with seed-time dates, `seed_demo --skip-embed`,
+  `scripts.demo_server` (scripted chat, no model), storyboard in
+  `docs/demo-scenario.md`, frames in `docs/demo-screens/`. Next: record the
+  video from it, then review / merge.
 
 ## Next
 
