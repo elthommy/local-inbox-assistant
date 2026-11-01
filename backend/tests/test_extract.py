@@ -245,10 +245,13 @@ class TestMyPriorities:
         prompt = system_prompt("  Votes on my investments are high.  ")
         assert prompt.startswith(SYSTEM_PROMPT)
         assert prompt.endswith("\nVotes on my investments are high.")
-        assert 'change ONLY "priority"' in prompt
+        assert 'changes ONLY "priority"' in prompt
+        assert "if none matches, ignore this section" in prompt
 
     def test_rules_truncated(self):
-        assert len(system_prompt("x" * 5000)) < len(SYSTEM_PROMPT) + 2300
+        prompt = system_prompt("x" * 5000)
+        assert prompt.endswith("\n" + "x" * 2000)
+        assert "x" * 2001 not in prompt
 
     async def test_extract_email_uses_saved_rules(self, monkeypatch):
         monkeypatch.setattr(settings, "my_priorities", "Club votes are high.")

@@ -74,8 +74,13 @@ Examples:
 The email may be in French or English. Reply with JSON matching the schema, nothing else."""
 
 MY_PRIORITIES_MAX = 2000
-MY_PRIORITIES_HEADER = """\
-The recipient's own priority rules (written by them; they override the priority rules above when they match the email, and change ONLY "priority", never tasks or events):"""
+MY_PRIORITIES_HEADER = (
+    "The recipient's own priority rules, written by them. Apply a rule ONLY when it"
+    " clearly matches this email's sender and subject; if none matches, ignore this"
+    " section completely and judge the email exactly as above. A matching rule"
+    ' overrides the priority above and changes ONLY "priority", never tasks or'
+    " events:"
+)
 
 
 def system_prompt(my_priorities: str = "") -> str:
