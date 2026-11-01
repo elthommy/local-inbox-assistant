@@ -11,16 +11,11 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-Nothing running. Session paused 2026-11-01 (GPU handed back to the user):
-app stopped, no benchmark job, no Ollama model loaded.
+Nothing running. App is up (`./start.sh`), no Ollama model loaded.
 
 ## Next
 
-1. **Apply v4.1 to stored mail** (#52 is merged, but the stored results
-   still come from v3): start the app (`./start.sh` — it was stopped, so
-   it loads the new code), then **re-parse recent emails** (settings
-   drawer, or `POST /api/reextract`) and spot-check the priority view.
-2. **"My priorities" — personal triage rules.** A free-text box in the
+1. **"My priorities" — personal triage rules.** A free-text box in the
    settings drawer (e.g. "votes on my crowdfunding investments are high
    priority; their promotions stay low"), stored in the local DB like the
    model choice and appended to the extraction prompt. Private by design:
@@ -37,10 +32,21 @@ app stopped, no benchmark job, no Ollama model loaded.
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
+- Spot-check after the v4.1 re-parse (2026-11-01, 267 emails of the last
+  14 days: 1 high, 46 medium, 220 low):
+  - medium is padded with routine order / pick-up / repair-status mail;
+  - deliveries and road-closure notices become events, and a shop
+    newsletter's agenda still yields several events per email;
+  - dates are not normalised (`06-NOV-2026`, free-text task due dates), and
+    one shareholder-meeting event got an implausible date;
+  - one reply thread yields the same task/event once per message (no
+    dedup across a thread).
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
+- 2026-11-01 — stored mail re-parsed with v4.1 (spot-check findings in
+  "Later / ideas").
 - 2026-11-01 — #52 extraction prompt v4.1 (events need a concrete date and
   a personal link; account notifications low; suggestions are not tasks;
   own sent mail flagged via Sent-folder owner detection) + this roadmap.
