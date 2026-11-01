@@ -11,17 +11,11 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-- **Demo data for the launch video** (PR #55, branch `demo-video-data`):
-  27-email corpus with seed-time dates, `seed_demo --skip-embed`,
-  `scripts.demo_server` (scripted chat, no model), storyboard in
-  `docs/demo-scenario.md`, frames in `docs/demo-screens/`; launch video
-  (made on Claude Web) in `docs/media/demo.mp4`, linked from the README.
-  Next: review / merge.
+Nothing running.
 
 ## Next
 
-1. **Review / merge #54** (prompt v5 + "My priorities") and **#55** (demo data + launch video).
-2. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
+1. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
    personal rule set in "My priorities").
 
 ## Later / ideas
@@ -43,6 +37,10 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## Done
 
+- 2026-11-01 — #55 demo data + launch video: 27-email synthetic corpus with
+  seed-time dates, `seed_demo --skip-embed`, `scripts.demo_server` (scripted
+  chat, no model), storyboard `docs/demo-scenario.md`, 20 s video in the
+  README (made on Claude Web from that branch).
 - 2026-11-01 — #54 extraction prompt **v5** (automated order / status / shipping
   mail low, plain delivery dates no longer events, pickups and replies
   written by people stay medium; invented events 8/4/2/7 → 2/0/0/2 on 280
