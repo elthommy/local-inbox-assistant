@@ -11,26 +11,24 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-- **Extraction prompt v4.1** — PR #52 (branch `feat/extraction-prompt-v41`),
-  awaiting merge. After merge: re-parse recent emails in the app.
-  Four fixes from an error analysis on the hand-checked set (A: events need
-  a concrete date and a personal booking/invitation; B: the recipient's own
-  sent mail is flagged for the model, owner learned from Sent folders;
-  C: account/sign-in notifications are low even with the "if this wasn't
-  you" line; D: suggestions are not tasks) + two clarifications found on a
-  fresh holdout. `gemma4:12b` priority accuracy 0.88/0.92/0.92/0.78 →
-  0.93/0.94/0.96/0.86 (tuning / holdouts 1–3). Artifacts:
-  `backend/data/benchmark/gold-2026-10-31/` (local only, 280 labels).
+Nothing running. Session paused 2026-11-01 (GPU handed back to the user):
+app stopped, no benchmark job, no Ollama model loaded.
 
 ## Next
 
-1. **"My priorities" — personal triage rules.** A free-text box in the
+1. **Apply v4.1 to stored mail** (#52 is merged, but the stored results
+   still come from v3): start the app (`./start.sh` — it was stopped, so
+   it loads the new code), then **re-parse recent emails** (settings
+   drawer, or `POST /api/reextract`) and spot-check the priority view.
+2. **"My priorities" — personal triage rules.** A free-text box in the
    settings drawer (e.g. "votes on my crowdfunding investments are high
    priority; their promotions stay low"), stored in the local DB like the
    model choice and appended to the extraction prompt. Private by design:
-   never in code or the repo. Test that a rule promotes the intended kind
-   of email without promoting promotions from the same sender, using the
-   benchmark set.
+   never in code or the repo. Acceptance test on the local benchmark set
+   (`backend/data/benchmark/gold-2026-10-31/`): the rule promotes the
+   intended kind of email without promoting promotions from the same
+   sender, and does not change other labels. Follow AGENTS.md
+   "Long-running GPU jobs" for any GPU run.
 
 ## Later / ideas
 
@@ -43,6 +41,11 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## Done
 
+- 2026-11-01 — #52 extraction prompt v4.1 (events need a concrete date and
+  a personal link; account notifications low; suggestions are not tasks;
+  own sent mail flagged via Sent-folder owner detection) + this roadmap.
+  `gemma4:12b` priority accuracy 0.93/0.94/0.96/0.86 on 280 hand-checked
+  emails (was 0.88/0.92/0.92/0.78).
 - 2026-10-31 — #51 stricter extraction prompt (v3) + `gemma4:12b` default
   parsing model, benchmarked on 230 hand-checked emails.
 - 2026-10-31 — #48/#49/#50 auto-pull of missing Ollama models + download
