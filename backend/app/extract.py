@@ -71,6 +71,19 @@ Examples:
 
 The email may be in French or English. Reply with JSON matching the schema, nothing else."""
 
+MY_PRIORITIES_MAX = 2000
+MY_PRIORITIES_HEADER = """\
+The recipient's own priority rules (written by them; they override the priority rules above when they match the email, and change ONLY "priority", never tasks or events):"""
+
+
+def system_prompt(my_priorities: str = "") -> str:
+    """The extraction system prompt, with the user's "My priorities" rules
+    appended when set."""
+    rules = my_priorities.strip()[:MY_PRIORITIES_MAX]
+    if not rules:
+        return SYSTEM_PROMPT
+    return f"{SYSTEM_PROMPT}\n\n{MY_PRIORITIES_HEADER}\n{rules}"
+
 
 def emails_needing_extraction(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """Unextracted, non-dismissed, non-muted emails inside the extraction window."""
@@ -143,7 +156,7 @@ async def extract_email(
     own = owner is not None and owner.sent(row)
     return await ollama.chat_json(
         [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt(settings.my_priorities)},
             {"role": "user", "content": build_user_msg(row, own)},
         ],
         schema=EXTRACTION_SCHEMA,

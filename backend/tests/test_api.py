@@ -338,6 +338,7 @@ class TestSettings:
         "chat_model": "qwen3:8b",
         "extraction_model": "qwen3:8b",
         "chat_provider": "ollama",
+        "my_priorities": "",
     }
 
     def _restore(self, monkeypatch):
@@ -405,6 +406,26 @@ class TestSettings:
         settings.chat_provider = "ollama"  # simulate a fresh process
         apply_setting_overrides()
         assert settings.chat_provider == "claude"
+
+    def test_my_priorities_persist_and_clearing_sticks(self, client, monkeypatch):
+        from app.db import apply_setting_overrides
+
+        settings = self._restore(monkeypatch)
+        rule = "Votes on my crowdfunding investments are high priority."
+        r = client.post("/api/settings", json={"my_priorities": rule}).json()
+        assert r["my_priorities"] == rule
+        settings.my_priorities = ""  # simulate a fresh process
+        apply_setting_overrides()
+        assert settings.my_priorities == rule
+        client.post("/api/settings", json={"my_priorities": ""})
+        settings.my_priorities = "stale"
+        apply_setting_overrides()
+        assert settings.my_priorities == ""  # an emptied box stays empty
+
+    def test_my_priorities_length_capped(self, client, monkeypatch):
+        self._restore(monkeypatch)
+        too_long = {"my_priorities": "x" * 2001}
+        assert client.post("/api/settings", json=too_long).status_code == 422
 
 
 class TestReindex:

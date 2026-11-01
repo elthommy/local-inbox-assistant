@@ -236,6 +236,17 @@ unattended (headless setups), `never` only reports the error naming the model
 to `ollama pull`. Chat never pulls on its own; a missing chat model answers
 with the same `ollama pull` hint.
 
+### My priorities (personal triage rules)
+
+The default priority rules are generic. **Settings drawer → My priorities**
+takes your own rules in plain words, e.g. "votes on my crowdfunding
+investments are high priority; their promotions stay low". They are appended
+to the parsing prompt and may change only an email's priority, never its
+tasks or events. The text is stored in the local SQLite meta table (never in
+the code or the repo, never sent anywhere but the local Ollama model). Like a
+model switch, it applies to newly parsed mail; after saving, the section
+offers **"re-parse recent emails"** to apply it to the extraction window.
+
 ### Using Claude for chat (optional)
 
 With an Anthropic API key configured (`INBOX_ANTHROPIC_API_KEY` in the

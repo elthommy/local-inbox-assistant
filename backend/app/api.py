@@ -14,6 +14,7 @@ from . import indexer, rag
 from .chat import stream_answer
 from .config import BACKEND_DIR, settings
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
+from .extract import MY_PRIORITIES_MAX
 from .llm.claude import ClaudeClient
 from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient, model_pulled
@@ -305,6 +306,7 @@ class SettingsUpdate(BaseModel):
     chat_model: str | None = Field(default=None, min_length=1, max_length=200)
     extraction_model: str | None = Field(default=None, min_length=1, max_length=200)
     chat_provider: str | None = Field(default=None, pattern="^(ollama|claude)$")
+    my_priorities: str | None = Field(default=None, max_length=MY_PRIORITIES_MAX)
 
 
 @router.get("/settings")
