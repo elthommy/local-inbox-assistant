@@ -11,7 +11,7 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-- **Demo data for the launch video** (branch `demo-video-data`, not merged):
+- **Demo data for the launch video** (PR #55, branch `demo-video-data`):
   27-email corpus with seed-time dates, `seed_demo --skip-embed`,
   `scripts.demo_server` (scripted chat, no model), storyboard in
   `docs/demo-scenario.md`, frames in `docs/demo-screens/`; launch video
@@ -20,7 +20,7 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## Next
 
-1. **Review / merge #54** (prompt v5 + "My priorities").
+1. **Review / merge #54** (prompt v5 + "My priorities") and **#55** (demo data + launch video).
 2. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
    personal rule set in "My priorities").
 
