@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # models"): same speed as qwen3:8b, far fewer false "high"/invented tasks.
     extraction_model: str = "gemma4:12b"
     embed_model: str = "nomic-embed-text"
+    # "My priorities": the user's own triage rules in free text, appended to
+    # the extraction prompt. Private: set in the UI, stored in the local DB.
+    my_priorities: str = ""
     # What to do when a configured Ollama model is missing (downloads are
     # several GB): "ask" = the UI asks before downloading, "always" = indexing
     # pulls it unattended, "never" = indexing stops with an error naming it.

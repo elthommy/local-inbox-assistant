@@ -12,6 +12,7 @@ from app.extract import (
     load_owner,
     mark_extraction_failed,
     store_extraction,
+    system_prompt,
 )
 
 
@@ -233,3 +234,35 @@ class TestOwnMailFlag:
         await extract_email(FakeOllama(), theirs, owner=owner)
         await extract_email(FakeOllama(), mine)  # no owner known: never flagged
         assert [m.startswith(OWN_MAIL_MARK) for m in seen] == [True, False, False]
+
+
+class TestMyPriorities:
+    def test_empty_rules_leave_prompt_unchanged(self):
+        assert system_prompt("") == SYSTEM_PROMPT
+        assert system_prompt("  \n ") == SYSTEM_PROMPT
+
+    def test_rules_appended_after_default_prompt(self):
+        prompt = system_prompt("  Votes on my investments are high.  ")
+        assert prompt.startswith(SYSTEM_PROMPT)
+        assert prompt.endswith("\nVotes on my investments are high.")
+        assert 'changes ONLY "priority"' in prompt
+        assert "if none matches, ignore this section" in prompt
+
+    def test_rules_truncated(self):
+        prompt = system_prompt("x" * 5000)
+        assert prompt.endswith("\n" + "x" * 2000)
+        assert "x" * 2001 not in prompt
+
+    async def test_extract_email_uses_saved_rules(self, monkeypatch):
+        monkeypatch.setattr(settings, "my_priorities", "Club votes are high.")
+        seen = []
+
+        class FakeOllama:
+            async def chat_json(self, messages, schema=None):
+                seen.append(messages[0]["content"])
+                return {"priority": "low", "tasks": [], "events": []}
+
+        with get_conn() as conn:
+            row = add_mail(conn, "a.eml", "Alex", "alex@example.com")
+        await extract_email(FakeOllama(), row)
+        assert seen[0].endswith("Club votes are high.")

@@ -411,6 +411,20 @@ describe('App', () => {
     expect(input).toHaveValue(30) // reflects the saved response
   })
 
+  it('saves my priorities and offers a re-parse', async () => {
+    api.updateSettings.mockResolvedValue({ my_priorities: 'club votes are high' })
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    await userEvent.click(screen.getByText('⚙ MCP / RAG'))
+    const box = screen.getByLabelText('my priorities')
+    expect(screen.getByText('save priorities')).toBeDisabled()
+    expect(screen.queryByText('re-parse recent emails', { selector: 'button' })).toBeInTheDocument() // models section only
+    await userEvent.type(box, 'club votes are high')
+    await userEvent.click(screen.getByText('save priorities'))
+    expect(api.updateSettings).toHaveBeenCalledWith({ my_priorities: 'club votes are high' })
+    expect(screen.getAllByText('re-parse recent emails')).toHaveLength(2)
+  })
+
   it('disables save on invalid settings input', async () => {
     render(<App />)
     await screen.findByText('Sarah Chen')

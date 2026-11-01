@@ -11,24 +11,13 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-Nothing running. Session paused 2026-11-01 (GPU handed back to the user):
-app stopped, no benchmark job, no Ollama model loaded.
+Nothing running. App is up (`./start.sh`), no Ollama model loaded.
 
 ## Next
 
-1. **Apply v4.1 to stored mail** (#52 is merged, but the stored results
-   still come from v3): start the app (`./start.sh` — it was stopped, so
-   it loads the new code), then **re-parse recent emails** (settings
-   drawer, or `POST /api/reextract`) and spot-check the priority view.
-2. **"My priorities" — personal triage rules.** A free-text box in the
-   settings drawer (e.g. "votes on my crowdfunding investments are high
-   priority; their promotions stay low"), stored in the local DB like the
-   model choice and appended to the extraction prompt. Private by design:
-   never in code or the repo. Acceptance test on the local benchmark set
-   (`backend/data/benchmark/gold-2026-10-31/`): the rule promotes the
-   intended kind of email without promoting promotions from the same
-   sender, and does not change other labels. Follow AGENTS.md
-   "Long-running GPU jobs" for any GPU run.
+1. **Review / merge #54** (prompt v5 + "My priorities").
+2. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
+   personal rule set in "My priorities").
 
 ## Later / ideas
 
@@ -37,10 +26,27 @@ app stopped, no benchmark job, no Ollama model loaded.
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
+- Left over from the v4.1 spot-check (2026-11-01): event/task dates are not
+  normalised (`06-NOV-2026`, free-text due dates; one implausible
+  shareholder-meeting date); a reply thread yields the same task/event once
+  per message (no dedup across a thread); a shop newsletter's agenda and
+  road-closure notices still become events.
+- "My priorities" side effects: appending any rule shifts ~1% of unrelated
+  emails' priority (benchmark: 2 wrong, 3 right out of 280). A per-rule
+  pre-filter (match sender before adding the rule) would remove that.
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
+- 2026-11-01 — #54 extraction prompt **v5** (automated order / status / shipping
+  mail low, plain delivery dates no longer events, pickups and replies
+  written by people stay medium; invented events 8/4/2/7 → 2/0/0/2 on 280
+  emails with 11 labels revised) and **"My priorities"** (settings drawer
+  free text, local DB, changes priority only; acceptance test: every vote
+  email of the target sender rises to high, its 65 other emails stay low).
+  Benchmark in `backend/data/benchmark/v5-2026-11-01/` (git-ignored).
+- 2026-11-01 — stored mail re-parsed with v4.1 (spot-check findings in
+  "Later / ideas").
 - 2026-11-01 — #52 extraction prompt v4.1 (events need a concrete date and
   a personal link; account notifications low; suggestions are not tasks;
   own sent mail flagged via Sent-folder owner detection) + this roadmap.

@@ -236,6 +236,17 @@ unattended (headless setups), `never` only reports the error naming the model
 to `ollama pull`. Chat never pulls on its own; a missing chat model answers
 with the same `ollama pull` hint.
 
+### My priorities (personal triage rules)
+
+The default priority rules are generic. **Settings drawer → My priorities**
+takes your own rules in plain words, e.g. "votes on my crowdfunding
+investments are high priority; their promotions stay low". They are appended
+to the parsing prompt and may change only an email's priority, never its
+tasks or events. The text is stored in the local SQLite meta table (never in
+the code or the repo, never sent anywhere but the local Ollama model). Like a
+model switch, it applies to newly parsed mail; after saving, the section
+offers **"re-parse recent emails"** to apply it to the extraction window.
+
 ### Using Claude for chat (optional)
 
 With an Anthropic API key configured (`INBOX_ANTHROPIC_API_KEY` in the
@@ -277,7 +288,16 @@ event?). RTX 4070 Ti 12 GB.
 |---|---|---|---|---|
 | `qwen3:8b` + original prompt | 0.50 / 0.76 / 0.78 / – | 55 of 106 | 27 | ~1 s/email |
 | `gemma4:12b` + first stricter prompt | 0.88 / 0.92 / 0.92 / 0.78 | 12 of 106 | 11 | ~1 s/email |
-| **`gemma4:12b` + current prompt** | **0.93 / 0.94 / 0.96 / 0.86** | **3 of 106** | **6** | ~1 s/email |
+| `gemma4:12b` + v4.1 prompt | 0.93 / 0.94 / 0.96 / 0.86 | 3 of 106 | 6 | ~1 s/email |
+| **`gemma4:12b` + current prompt (v5)**, revised labels¹ | **0.92 / 0.96 / 0.96 / 0.88** | **6 of 107** | **5** | ~1 s/email |
+
+¹ v5 changed the policy for shopping mail, and 11 labels were revised to
+match: order confirmations, order/repair status and shipping notices are now
+low, and a plain "arriving on <date>" is no longer an event; only pickups
+(Drive, click & collect, relay point) stay medium with an event. Scored on
+those revised labels, v4.1 got 0.92 / 0.96 / 0.94 / 0.86 and invented events
+on 8 / 4 / 2 / 7 emails; v5 invents them on 2 / 0 / 0 / 2, with the same real
+events found.
 
 Most of the gain came from the prompt, which now spells out what is *not*
 important — one-time codes, sign-in and account notifications (even with
@@ -285,7 +305,7 @@ the usual "if this wasn't you" line), promotions and petitions even when
 they say "urgent", notifications for threads you only follow, your own sent
 mail — and what is not a task or event (marketing calls to action,
 suggestions, debit dates, offer end dates, mass-mailed events), while
-keeping real ones (deliveries, pickups, bookings, account deadlines, your
+keeping real ones (pickups, delivery slots you must be home for, bookings, account deadlines, your
 own calendar). Your own sent mail is recognised automatically: the
 addresses and display names seen in your Sent folder(s) mark matching
 emails as "sent by the recipient" for the model.

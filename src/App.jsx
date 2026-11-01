@@ -867,6 +867,78 @@ function IndexingSettings({ tunables, onSave }) {
   )
 }
 
+const MY_PRIORITIES_MAX = 2000
+
+function MyPriorities({ tunables, busy, ollamaUp, onSave, onReextract }) {
+  const saved = tunables?.my_priorities ?? ''
+  const [draft, setDraft] = useState(saved)
+  const [justSaved, setJustSaved] = useState(false)
+  useEffect(() => setDraft(saved), [saved])
+
+  if (!tunables) return <div style={{ fontFamily: MONO, fontSize: 11, color: '#6b7280' }}>…</div>
+  const dirty = draft !== saved
+  const canReparse = justSaved && !dirty && !busy && ollamaUp
+  const btn = (enabled) => ({
+    background: enabled ? '#1f6feb' : '#1a1f27',
+    border: `1px solid ${enabled ? '#1f6feb' : '#262b33'}`,
+    color: enabled ? '#fff' : '#5b6270',
+    fontFamily: MONO,
+    fontSize: 11,
+    padding: '6px 12px',
+    borderRadius: 6,
+    cursor: enabled ? 'pointer' : 'default',
+  })
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280' }}>
+        your own triage rules, in plain words — they only change the priority of parsed emails, and stay on this machine
+      </div>
+      <textarea
+        value={draft}
+        aria-label="my priorities"
+        maxLength={MY_PRIORITIES_MAX}
+        rows={4}
+        placeholder="e.g. votes on my crowdfunding investments are high priority; their promotions stay low"
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setJustSaved(false)
+        }}
+        style={{
+          background: '#0e1116',
+          border: '1px solid #262b33',
+          color: '#e8eaed',
+          fontFamily: MONO,
+          fontSize: 12,
+          padding: '6px 8px',
+          borderRadius: 6,
+          outline: 'none',
+          resize: 'vertical',
+        }}
+      />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={async () => {
+            await onSave({ my_priorities: draft })
+            setJustSaved(true)
+          }}
+          disabled={!dirty}
+          style={btn(dirty)}
+        >
+          save priorities
+        </button>
+        {justSaved && (
+          <button onClick={onReextract} disabled={!canReparse} style={btn(canReparse)}>
+            re-parse recent emails
+          </button>
+        )}
+      </div>
+      <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280' }}>
+        applies to newly parsed mail · re-parse to apply it to recent emails
+      </div>
+    </div>
+  )
+}
+
 function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onReindex, onReextract, mutedSenders, onUnmute, tunables, onSaveSettings, dateFormat, onDateFormatChange }) {
   const [showMcp, setShowMcp] = useState(true)
   const sectionTitle = {
@@ -964,6 +1036,19 @@ function SettingsDrawer({ open, onClose, status, useContext, toggleContext, onRe
                   </span>
                 )}
               </div>
+            </div>
+          </div>
+
+          <div>
+            <div style={sectionTitle}>My priorities</div>
+            <div style={card}>
+              <MyPriorities
+                tunables={tunables}
+                busy={!['idle', 'error'].includes(index?.progress?.phase ?? 'idle')}
+                ollamaUp={!!ollama?.up}
+                onSave={onSaveSettings}
+                onReextract={onReextract}
+              />
             </div>
           </div>
 

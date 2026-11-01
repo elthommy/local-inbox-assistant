@@ -137,19 +137,24 @@ TUNABLE_SETTINGS = {
     "chat_model": str,
     "extraction_model": str,
     "chat_provider": str,
+    "my_priorities": str,
 }
+# Tunables whose override may be an empty string (clearing them must stick).
+EMPTY_OK_SETTINGS = {"my_priorities"}
 
 
 def apply_setting_overrides() -> None:
     """Load UI-tuned setting overrides from the meta table into settings."""
     with get_conn() as conn:
         for key, cast in TUNABLE_SETTINGS.items():
-            value = get_meta(conn, f"setting_{key}")
-            if value:
+            value = get_meta(conn, f"setting_{key}", None)
+            if value or (value is not None and key in EMPTY_OK_SETTINGS):
                 setattr(settings, key, cast(value))
 
 
-def get_meta(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+def get_meta(
+    conn: sqlite3.Connection, key: str, default: str | None = ""
+) -> str | None:
     """Read a value from the meta key/value table."""
     row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
     return row["value"] if row else default
