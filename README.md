@@ -14,6 +14,16 @@ Claude (Anthropic API) instead of the local model — an explicit opt-in per
 conversation; see [Using Claude for chat](#using-claude-for-chat-optional).
 Indexing, extraction, and embeddings always stay local.
 
+## Demo
+
+[![20-second demo: 27 emails triaged down to the 7 that matter, tasks, the week's events, and chat answers in English and French](docs/media/demo-poster.jpg)](docs/media/demo.mp4)
+
+*20 s, synthetic mailbox ([how it was made](docs/demo-scenario.md)): click to
+play. In the video, priorities, tasks and events are the demo's canned
+extraction results and chat answers are scripted; in real use a local model
+produces both. Music: "Happy Beats / Business Moves Vol. 9" by Sascha Ende,
+[ende.app](https://ende.app) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).*
+
 ## Screenshots
 
 All screenshots use the built-in synthetic mailbox, not real mail — see
