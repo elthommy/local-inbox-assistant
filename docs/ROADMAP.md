@@ -18,7 +18,12 @@ Nothing running.
 1. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
    free-text due dates, implausible dates); one task/event per reply thread
    instead of one per message; a shop newsletter's agenda and road-closure
-   notices should not become events.
+   notices should not become events. Plan (2026-11-02): dedup by thread
+   (`In-Reply-To`/`References`) and date normalisation in code, no GPU, and
+   applicable to stored results without re-parsing; only the
+   newsletter/road-closure fix needs a prompt change: benchmark on the 280
+   hand-checked emails (~5 min per variant) + re-parse (~5 min), ~15–25 min
+   of GPU in total. Ask the user before each GPU run.
 2. **"My priorities" side effect.** Appending any rule shifts ~1% of
    unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
    A per-rule pre-filter (match the sender before adding the rule) would
@@ -29,16 +34,18 @@ Nothing running.
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
-- Cross-language retrieval: an English question about a French email can
-  miss it ("Was my parcel delivered?" never retrieves "Votre colis a été
-  livré"), with every chat model (2026-11-02 chat benchmark). A multilingual
-  embedding model, or translating the query, would fix it; changing the
-  embedding model means rebuilding the index.
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
-- 2026-11-02 — chat model choice: `scripts.benchmark_chat` (21 EN/FR
+- 2026-11-02 — #57 multilingual retrieval: `scripts.benchmark_retrieval` (demo
+  mailbox + 1 000 real emails as distractors, does the answering email reach
+  the chat's top 6). Default embedding model `nomic-embed-text` →
+  `embeddinggemma`: 9/16 → 15/16 questions, cross-language 5/12 → 11/12.
+  Per-model query/document prefixes (`EMBED_PREFIXES`); the index records its
+  embedding setup and rebuilds itself once when it changes (~3 min for the
+  full mailbox).
+- 2026-11-02 — #56 chat model choice: `scripts.benchmark_chat` (21 EN/FR
   questions ×2 on the demo mailbox, facts + answer language + speed). The
   chat prompt now names the question's language (detected in
   `app/lang.py`) at its end; `gemma4:12b` went from 36% to 93% of answers

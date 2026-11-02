@@ -9,7 +9,7 @@ model over a RAG index, extracts tasks / events / priority from recent emails,
 and exposes the same data to other AI tools through an MCP server.
 
 By default nothing leaves your machine: parsing, embeddings (ChromaDB +
-`nomic-embed-text`), and chat all run locally. Optionally, chat can run on
+`embeddinggemma`), and chat all run locally. Optionally, chat can run on
 Claude (Anthropic API) instead of the local model — an explicit opt-in per
 conversation; see [Using Claude for chat](#using-claude-for-chat-optional).
 Indexing, extraction, and embeddings always stay local.
@@ -67,7 +67,7 @@ normalised into the same timeline.*
 
 - **`backend/`** — Python (FastAPI, uv-managed, Python 3.12)
   - Maildir scanner + `.eml` parser (stdlib `email`, HTML→text fallback)
-  - Incremental indexer: parse → embed (Ollama `nomic-embed-text` → ChromaDB)
+  - Incremental indexer: parse → embed (Ollama `embeddinggemma` → ChromaDB)
     → LLM extraction of priority/tasks/events on recent mail
   - On-demand reading view: the email's HTML part converted to Markdown,
     with a quality heuristic that falls back to plain text (plus a
@@ -87,7 +87,8 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
   - an instruct model for chat and email parsing — default `gemma4:12b` for
     both, switchable separately in the UI; a missing one is offered for
     download by the app
-  - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
+  - `embeddinggemma` for embeddings (multilingual; offered for download by
+    the app too)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
 - A Thunderbird profile storing mail in **maildir** format (one `.eml` file
@@ -264,11 +265,36 @@ uv run python -m scripts.benchmark_chat --dir data/benchmark/chat-run \
 ```
 
 The embedding model is the exception: it is set via `INBOX_EMBED_MODEL` in
-`backend/.env` (default `nomic-embed-text`), and changing it requires
-rebuilding the RAG index (delete `backend/data/chroma/` and restart):
-vectors from different embedding models are not comparable. There is
-deliberately no reindex-from-scratch button in the UI — nothing tunable
-there invalidates the embeddings.
+`backend/.env` (default `embeddinggemma`). Vectors from different embedding
+models are not comparable, so the index records which model (and query /
+document prefixes, see `EMBED_PREFIXES` in `app/rag.py`) built it; when that
+changes, the next indexing pass drops the vectors and re-embeds every email
+(about 3 minutes for ~17 500 chunks on an RTX 4070 Ti). Chat retrieval returns
+nothing until then rather than mixing the two. There is deliberately no
+reindex-from-scratch button in the UI — nothing tunable there invalidates
+the embeddings.
+
+#### Why `embeddinggemma` for embeddings
+
+`nomic-embed-text` (the default until 2026-11-02) is English-centric: an
+English question about a French email often missed it ("Was my parcel
+delivered?" never retrieved "Votre colis a été livré"). `scripts.benchmark_retrieval`
+embeds the demo mailbox plus 1 000 real emails as distractors and checks
+whether the email answering each question reaches the chat's top 6 (16
+questions, 12 of them cross-language):
+
+| model | in top 6 | cross-language | MRR | chunks/s |
+|---|---|---|---|---|
+| `nomic-embed-text` (no prefixes, before) | 9/16 | 5/12 | 0.49 | 146 |
+| `nomic-embed-text` (with its prefixes) | 8/16 | 4/12 | 0.44 | 143 |
+| `qwen3-embedding:0.6b` | 12/16 | 9/12 | 0.65 | 67 |
+| `snowflake-arctic-embed2` | 14/16 | 11/12 | 0.77 | 80 |
+| `nomic-embed-text-v2-moe` | 14/16 | 10/12 | 0.85 | 118 |
+| `bge-m3` | 15/16 | 11/12 | 0.73 | 80 |
+| **`embeddinggemma`** | **15/16** | **11/12** | **0.84** | 96 |
+
+`embeddinggemma` ties `bge-m3` on hits, ranks the right email higher, and is
+faster and smaller (0.6 GB). Each model gets its model-card prefixes.
 
 **Missing models can be downloaded from the app.** When a configured model
 (embedding, extraction, or the Ollama chat model) is not pulled, the app asks

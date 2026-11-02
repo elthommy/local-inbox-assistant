@@ -77,6 +77,7 @@ class TestStatus:
                 {"name": "qwen3:8b", "size": 5_200_000_000},
                 {"name": "gemma4:12b", "size": 8_000_000_000},
                 {"name": "nomic-embed-text:latest", "size": 274_000_000},
+                {"name": "bge-m3:latest", "size": 1_160_000_000},
             ]
 
         monkeypatch.setattr(OllamaClient, "available", up)
@@ -85,6 +86,7 @@ class TestStatus:
         # independent of the shipped defaults (tested in test_config.py)
         monkeypatch.setattr(settings, "chat_model", "qwen3:8b")
         monkeypatch.setattr(settings, "extraction_model", "gemma4:12b")
+        monkeypatch.setattr(settings, "embed_model", "nomic-embed-text")
         data = client.get("/api/status").json()
         assert data["ollama"]["up"] is True
         assert data["ollama"]["chat_model_pulled"] is True

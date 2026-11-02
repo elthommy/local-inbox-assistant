@@ -190,6 +190,10 @@ async def _scan_and_parse() -> None:
 
 async def _embed_pending(ollama: OllamaClient) -> None:
     """Embed every not-yet-embedded email into Chroma, in small batches."""
+    if rag.reset_if_embedding_changed():
+        log.info(
+            "embedding setup changed (%s): rebuilding the index", rag.embed_signature()
+        )
     with get_conn() as conn:
         to_embed = [
             dict(r) for r in conn.execute("SELECT * FROM emails WHERE embedded = 0")

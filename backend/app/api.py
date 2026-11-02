@@ -64,11 +64,14 @@ def _email_dict(row, include_chips: bool = False, conn=None) -> dict:
 def _selectable(info: dict) -> bool:
     """Whether a pulled model can be offered as a chat/extraction choice.
 
-    Embedding models can't chat; they are recognized by name ("embed") since
+    Embedding models can't chat; they are recognized by name ("embed",
+    "bge-", "minilm") since
     /api/tags does not expose capabilities.
     """
     name = info["name"]
-    return name != settings.embed_model and "embed" not in name
+    return name != settings.embed_model and not any(
+        tag in name for tag in ("embed", "bge-", "minilm")
+    )
 
 
 def _missing_models(pulled: list[str]) -> list[str]:

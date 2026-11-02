@@ -30,7 +30,7 @@ flowchart LR
         CHAT["chat.py<br>RAG orchestration"]
     end
 
-    OL["Ollama<br>chat/extraction models + nomic-embed-text"]
+    OL["Ollama<br>chat/extraction models + embeddinggemma"]
     CL["Claude API<br>(optional, chat only)"]
     UI["React dashboard<br>(Vite, port 5173)"]
     MCP["mcp_server.py<br>localmail MCP (stdio)"]
@@ -66,7 +66,7 @@ flowchart TD
     A["scan (maildir.py)<br>walk maildir for .eml files newer than<br>window_days (90d), skip excluded folders,<br>already-known files and cached<br>out-of-window probes (skipped_files)"]
     B["parse (parser.py)<br>stdlib email + BeautifulSoup:<br>headers, unread flag, best text body"]
     C["store (indexer.py)<br>INSERT into SQLite; duplicates by<br>Message-ID recorded in seen_files"]
-    D["embed (rag.py)<br>chunk bodies (1200 chars, 150 overlap),<br>prepend sender/date header, embed via<br>nomic-embed-text, upsert into Chroma"]
+    D["embed (rag.py)<br>chunk bodies (1200 chars, 150 overlap),<br>prepend sender/date header, embed via<br>embeddinggemma, upsert into Chroma"]
     E["extract (extract.py)<br>one qwen3.6 call per email, JSON-schema<br>constrained: priority + tasks + events<br>(recent window only, 14d)"]
     F["event dates (event_dates.py)<br>free-text dates ('18 juillet', 'demain',<br>'Fri') resolved to ISO, anchored on the<br>email's send date"]
     G[("SQLite: emails.priority,<br>tasks, events")]
