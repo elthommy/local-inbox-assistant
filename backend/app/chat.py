@@ -9,6 +9,7 @@ from datetime import datetime
 from . import rag
 from .config import settings
 from .db import get_conn, triage_filter
+from .lang import LANGUAGE_NAMES, detect_language
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
 from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient
@@ -27,8 +28,7 @@ were extracted from recent emails. Today is {today}.
 
 Answer using ONLY this context; if it does not contain the answer, say so
 rather than inventing details. Quote senders/dates when useful. Be concise and
-practical. Reply in the language the user writes in (mailbox is mostly French).
-You may use light Markdown formatting (bold, bullet lists, inline code); avoid
+practical. You may use light Markdown formatting (bold, bullet lists, inline code); avoid
 headings and tables unless they genuinely help.
 {email_focus}
 ## Retrieved email excerpts
@@ -38,7 +38,38 @@ headings and tables unless they genuinely help.
 {tasks}
 
 ## Upcoming events
-{events}"""
+{events}
+
+## Answer language
+{answer_language}"""
+
+ANSWER_LANGUAGE_RULE = """\
+{who} Write your answer in {lang}, even when the excerpts above are in another
+language: translate what you use from them, and keep names, amounts and dates
+exact."""
+
+# the summarize button asks for the email's own language (EMAIL_FOCUS_BLOCK)
+FOCUS_LANGUAGE_EXCEPTION = """ Exception: a summary of the email in focus is
+written in that email's language, as said above."""
+
+
+def answer_language_rule(question: str, email_focus: bool) -> str:
+    """The prompt's closing language rule, naming the question's language.
+
+    Naming it ("in English") holds better than "the user's language": Gemma
+    models otherwise follow the language of the retrieved excerpts.
+    """
+    name = LANGUAGE_NAMES.get(detect_language(question))
+    if name:
+        rule = ANSWER_LANGUAGE_RULE.format(
+            who=f"The user's latest message is in {name}.", lang=name
+        )
+    else:
+        rule = ANSWER_LANGUAGE_RULE.format(
+            who="", lang="the language of the user's latest message"
+        ).lstrip()
+    return rule + (FOCUS_LANGUAGE_EXCEPTION if email_focus else "")
+
 
 EMAIL_FOCUS_BLOCK = """
 ## Email in focus
@@ -142,6 +173,9 @@ async def build_messages(
             excerpts=excerpts,
             tasks=tasks_block,
             events=events_block,
+            answer_language=answer_language_rule(
+                history[-1]["content"], bool(email_focus)
+            ),
         )
     return [{"role": "system", "content": system}, *history[-12:]]
 

@@ -5,6 +5,10 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
+# Best chat model in the 2026-11-02 benchmark (scripts.benchmark_chat): marked
+# "recommended" in the UI pickers, and the default chat model. Same model as
+# parsing, so one model stays loaded instead of two swapping in VRAM.
+RECOMMENDED_CHAT_MODEL = "gemma4:12b"
 DATA_DIR = BACKEND_DIR / "data"
 
 
@@ -39,7 +43,7 @@ class Settings(BaseSettings):
     extraction_max_emails: int = 300
 
     ollama_url: str = "http://localhost:11434"
-    chat_model: str = "qwen3:8b"
+    chat_model: str = RECOMMENDED_CHAT_MODEL
     # Extraction can run a different model than chat. gemma4:12b won the
     # 2026-10-31 benchmark against hand-checked labels (see README "Changing
     # models"): same speed as qwen3:8b, far fewer false "high"/invented tasks.

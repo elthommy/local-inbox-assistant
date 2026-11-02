@@ -30,4 +30,4 @@ def test_default_models():
     # extraction default chosen by the 2026-10-31 benchmark (README "Changing models")
     defaults = Settings(_env_file=None)
     assert defaults.extraction_model == "gemma4:12b"
-    assert defaults.chat_model == "qwen3:8b"
+    assert defaults.chat_model == "gemma4:12b"

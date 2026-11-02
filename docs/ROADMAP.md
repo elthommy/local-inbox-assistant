@@ -15,18 +15,11 @@ Nothing running.
 
 ## Next
 
-1. **Chat model choice.** The picker already exists (a `<select>` in the chat
-   pane header and in the settings drawer; Claude is offered when
-   configured). What is missing is knowing which model to pick: evaluate the
-   pulled models for chat (`gemma4:12b` was only evaluated for extraction;
-   `qwen3:8b` drifts into the mailbox's language), set the winner as the
-   default, and help the user choose in the picker (e.g. mark the
-   recommended model, show the size).
-2. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
+1. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
    free-text due dates, implausible dates); one task/event per reply thread
    instead of one per message; a shop newsletter's agenda and road-closure
    notices should not become events.
-3. **"My priorities" side effect.** Appending any rule shifts ~1% of
+2. **"My priorities" side effect.** Appending any rule shifts ~1% of
    unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
    A per-rule pre-filter (match the sender before adding the rule) would
    remove that.
@@ -36,10 +29,22 @@ Nothing running.
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
+- Cross-language retrieval: an English question about a French email can
+  miss it ("Was my parcel delivered?" never retrieves "Votre colis a été
+  livré"), with every chat model (2026-11-02 chat benchmark). A multilingual
+  embedding model, or translating the query, would fix it; changing the
+  embedding model means rebuilding the index.
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
+- 2026-11-02 — chat model choice: `scripts.benchmark_chat` (21 EN/FR
+  questions ×2 on the demo mailbox, facts + answer language + speed). The
+  chat prompt now names the question's language (detected in
+  `app/lang.py`) at its end; `gemma4:12b` went from 36% to 93% of answers
+  passing, 100% in the right language, and is the new chat default (one
+  model for chat and parsing) marked "★ recommended" in both pickers.
+  Runs in `backend/data/benchmark/chat-2026-11-02*/` (git-ignored).
 - 2026-11-01 — priority view spot-checked after the v5 re-parse, with a
   personal rule set in "My priorities".
 - 2026-11-01 — #55 demo data + launch video: 27-email synthetic corpus with

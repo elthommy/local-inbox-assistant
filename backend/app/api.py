@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from . import indexer, rag
 from .chat import stream_answer
-from .config import BACKEND_DIR, settings
+from .config import BACKEND_DIR, RECOMMENDED_CHAT_MODEL, settings
 from .db import TUNABLE_SETTINGS, get_conn, get_meta, set_meta, triage_filter
 from .extract import MY_PRIORITIES_MAX
 from .llm.claude import ClaudeClient
@@ -95,6 +95,7 @@ async def status():
             "up": ollama_up,
             "url": settings.ollama_url,
             "chat_model": settings.chat_model,
+            "recommended_chat_model": RECOMMENDED_CHAT_MODEL,
             "extraction_model": settings.extraction_model,
             "embed_model": settings.embed_model,
             "chat_model_pulled": model_pulled(settings.chat_model, models),

@@ -104,7 +104,7 @@ function Header({ ollamaUp, claudeConfigured, onOpenSettings }) {
   )
 }
 
-function ChatPane({ chatModel, models, provider, claudeConfigured, claudeModel, onChatModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
+function ChatPane({ chatModel, recommendedModel, models, provider, claudeConfigured, claudeModel, onChatModelChange, useContext, toggleContext, indexedCount, messages, isTyping, input, onInputChange, onSend, focusEmail, onClearFocus }) {
   // the configured model may not be in the pulled list (Ollama down / model
   // removed): keep it selectable so the dropdown never shows a wrong value
   const modelOptions = models.some((m) => m.name === chatModel) ? models : [{ name: chatModel }, ...models]
@@ -149,7 +149,8 @@ function ChatPane({ chatModel, models, provider, claudeConfigured, claudeModel, 
         >
           {modelOptions.map((m) => (
             <option key={m.name} value={m.name}>
-              {m.name} · Ollama (local)
+              {m.name}
+              {recommendedTag(m.name, recommendedModel)} · Ollama (local)
             </option>
           ))}
           <option value="claude" disabled={!claudeConfigured}>
@@ -725,6 +726,8 @@ function IndexProgress({ progress }) {
 }
 
 const fmtModelSize = (bytes) => (bytes ? ` · ${(bytes / 1e9).toFixed(1)} GB` : '')
+// the backend's benchmarked chat pick (RECOMMENDED_CHAT_MODEL), marked in both pickers
+const recommendedTag = (name, recommended) => (name && name === recommended ? ' ★ recommended' : '')
 
 const MODEL_ROLES = [
   { key: 'chat_model', label: 'chat model', hint: 'answers questions in the chat panel' },
@@ -766,6 +769,7 @@ function ModelSettings({ ollama, busy, onSave, onReextract }) {
               {options.map((m) => (
                 <option key={m.name} value={m.name}>
                   {m.name}
+                  {f.key === 'chat_model' ? recommendedTag(m.name, ollama?.recommended_chat_model) : ''}
                   {fmtModelSize(m.size)}
                 </option>
               ))}
@@ -1584,6 +1588,7 @@ export default function App() {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <ChatPane
           chatModel={chatModel}
+          recommendedModel={status?.ollama?.recommended_chat_model}
           models={models}
           provider={chatProvider}
           claudeConfigured={claudeConfigured}
