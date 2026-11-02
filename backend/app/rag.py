@@ -5,9 +5,66 @@ from __future__ import annotations
 import chromadb
 
 from .config import settings
+from .db import get_conn, get_meta, set_meta
 from .llm.ollama import OllamaClient
 
+# Query / document prefixes each embedding model was trained with (model
+# cards), keyed by model name without tag; the longest matching key wins.
+# Without them retrieval quality drops (nomic-embed-text ran without them
+# until 2026-11-02).
+EMBED_PREFIXES = {
+    "nomic-embed-text": ("search_query: ", "search_document: "),
+    "snowflake-arctic-embed2": ("query: ", ""),
+    "qwen3-embedding": (
+        "Instruct: Given a question about the user's emails, retrieve the "
+        "email passages that answer it\nQuery: ",
+        "",
+    ),
+    "embeddinggemma": ("task: search result | query: ", "title: none | text: "),
+}
+# meta key: which embedding setup built the current index
+EMBED_SIGNATURE_KEY = "embed_signature"
+
 _client: chromadb.ClientAPI | None = None
+
+
+def embed_prefixes(model: str) -> tuple[str, str]:
+    """(query prefix, document prefix) for an embedding model, '' if none."""
+    base = model.split(":")[0]
+    keys = [k for k in EMBED_PREFIXES if base.startswith(k)]
+    return EMBED_PREFIXES[max(keys, key=len)] if keys else ("", "")
+
+
+def embed_signature() -> str:
+    """Identifies the embedding setup: vectors from two setups don't compare."""
+    query, doc = embed_prefixes(settings.embed_model)
+    return f"{settings.embed_model}|{query}|{doc}"
+
+
+def index_matches_embedding() -> bool:
+    """Whether the stored vectors were built with the current embedding setup."""
+    with get_conn() as conn:
+        stored = get_meta(conn, EMBED_SIGNATURE_KEY, None)
+    return stored == embed_signature() or (stored is None and chunk_count() == 0)
+
+
+def reset_if_embedding_changed() -> bool:
+    """Drop the vectors when the embedding setup changed; True if it did.
+
+    Every email is marked for re-embedding. An index built before the
+    signature existed (no meta key, chunks present) counts as changed.
+    """
+    with get_conn() as conn:
+        stored = get_meta(conn, EMBED_SIGNATURE_KEY, None)
+        if stored == embed_signature():
+            return False
+        rebuild = stored is not None or chunk_count() > 0
+        if rebuild:
+            get_collection()  # make sure the client exists
+            _client.delete_collection("emails")
+            conn.execute("UPDATE emails SET embedded = 0")
+        set_meta(conn, EMBED_SIGNATURE_KEY, embed_signature())
+    return rebuild
 
 
 def get_collection() -> chromadb.Collection:
@@ -77,11 +134,16 @@ async def index_emails(ollama: OllamaClient, email_rows: list[dict]) -> int:
         return 0
     embeddings = []
     batch = 32
+    _, doc_prefix = embed_prefixes(settings.embed_model)
     for i in range(0, len(all_docs), batch):
-        embeddings += await ollama.embed(all_docs[i : i + batch])
+        texts = [doc_prefix + d for d in all_docs[i : i + batch]]
+        embeddings += await ollama.embed(texts)
     coll.upsert(
         ids=all_ids, documents=all_docs, embeddings=embeddings, metadatas=all_metas
     )
+    with get_conn() as conn:  # a first build records its setup
+        if get_meta(conn, EMBED_SIGNATURE_KEY, None) is None:
+            set_meta(conn, EMBED_SIGNATURE_KEY, embed_signature())
     return len(all_docs)
 
 
@@ -90,9 +152,10 @@ async def search(
 ) -> list[dict]:
     """Return the best-matching chunks: [{email_id, text, distance}]."""
     coll = get_collection()
-    if coll.count() == 0:
-        return []
-    [embedding] = await ollama.embed([query])
+    if coll.count() == 0 or not index_matches_embedding():
+        return []  # empty, or old vectors waiting for the rebuild
+    query_prefix, _ = embed_prefixes(settings.embed_model)
+    [embedding] = await ollama.embed([query_prefix + query])
     res = coll.query(
         query_embeddings=[embedding],
         n_results=min(top_k or settings.rag_top_k, coll.count()),

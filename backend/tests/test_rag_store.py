@@ -1,6 +1,8 @@
 import pytest
 
 from app import rag
+from app.config import settings
+from app.db import get_conn
 from app.llm.ollama import OllamaClient
 
 
@@ -81,3 +83,53 @@ class TestSearchEmailsDedup:
     async def test_keeps_best_distance(self, patched_search):
         out = await rag.search_emails(OllamaClient(), "q", top_k=3)
         assert out[0]["distance"] == 0.1
+
+
+class TestEmbeddingSetup:
+    """Per-model prefixes and the automatic rebuild when the setup changes."""
+
+    def test_prefixes_by_model_family(self):
+        assert rag.embed_prefixes("nomic-embed-text:latest")[0] == "search_query: "
+        assert rag.embed_prefixes("nomic-embed-text-v2-moe")[1] == "search_document: "
+        assert rag.embed_prefixes("embeddinggemma:300m")[1] == "title: none | text: "
+        assert rag.embed_prefixes("bge-m3") == ("", "")
+
+    async def test_prefixes_sent_but_not_stored(self, monkeypatch):
+        monkeypatch.setattr(settings, "embed_model", "embeddinggemma")
+        sent = []
+
+        async def embed(self, texts):
+            sent.extend(texts)
+            return [[1.0, 0.0] for _ in texts]
+
+        monkeypatch.setattr(OllamaClient, "embed", embed)
+        await rag.index_emails(OllamaClient(), [email(1, "hello")])
+        hits = await rag.search(OllamaClient(), "hi?", top_k=1)
+        assert sent[0].startswith("title: none | text: From: Sender 1")
+        assert sent[1] == "task: search result | query: hi?"
+        assert hits[0]["text"].startswith("From: Sender 1")  # excerpt unprefixed
+
+    async def test_fresh_index_is_not_rebuilt(self, fake_embed):
+        assert rag.reset_if_embedding_changed() is False
+        assert rag.reset_if_embedding_changed() is False
+
+    async def test_model_change_rebuilds(self, fake_embed, monkeypatch):
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO emails(id, maildir_file, embedded) VALUES(1, 'a.eml', 1)"
+            )
+        await rag.index_emails(OllamaClient(), [email(1, "hello")])
+        monkeypatch.setattr(settings, "embed_model", "bge-m3")
+        # until the rebuild, search must not mix old vectors with the new model
+        assert await rag.search(OllamaClient(), "hello") == []
+        assert rag.reset_if_embedding_changed() is True
+        assert rag.chunk_count() == 0
+        with get_conn() as conn:
+            assert conn.execute("SELECT embedded FROM emails").fetchone()[0] == 0
+        assert rag.reset_if_embedding_changed() is False
+
+    async def test_index_without_signature_is_rebuilt(self, fake_embed):
+        await rag.index_emails(OllamaClient(), [email(1, "hello")])
+        with get_conn() as conn:  # an index built before signatures existed
+            conn.execute("DELETE FROM meta WHERE key = ?", (rag.EMBED_SIGNATURE_KEY,))
+        assert rag.reset_if_embedding_changed() is True

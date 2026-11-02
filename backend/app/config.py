@@ -48,7 +48,10 @@ class Settings(BaseSettings):
     # 2026-10-31 benchmark against hand-checked labels (see README "Changing
     # models"): same speed as qwen3:8b, far fewer false "high"/invented tasks.
     extraction_model: str = "gemma4:12b"
-    embed_model: str = "nomic-embed-text"
+    # Multilingual: an English question finds a French email and vice versa.
+    # Won the 2026-11-02 retrieval benchmark (scripts.benchmark_retrieval).
+    # Changing it rebuilds the index automatically (rag.embed_signature).
+    embed_model: str = "embeddinggemma"
     # "My priorities": the user's own triage rules in free text, appended to
     # the extraction prompt. Private: set in the UI, stored in the local DB.
     my_priorities: str = ""

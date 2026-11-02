@@ -219,7 +219,7 @@ async def _ok_extract(ollama, row, owner=None):
 async def test_missing_models_are_pulled_when_auto_pull(fake_embed, monkeypatch):
     make_eml("one.eml", days_ago=1)
     pulls = []
-    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    _fake_ollama_models(monkeypatch, [f"{settings.embed_model}:latest"], pulls)
     monkeypatch.setattr(settings, "auto_pull", "always")
     monkeypatch.setattr(indexer, "extract_email", _ok_extract)
     await indexer.run_index(do_extract=True)
@@ -233,7 +233,7 @@ async def test_missing_models_are_pulled_when_auto_pull(fake_embed, monkeypatch)
 async def test_missing_model_without_auto_pull_stops_run(fake_embed, monkeypatch):
     make_eml("one.eml", days_ago=1)
     pulls = []
-    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    _fake_ollama_models(monkeypatch, [f"{settings.embed_model}:latest"], pulls)
     monkeypatch.setattr(settings, "auto_pull", "never")
     monkeypatch.setattr(indexer, "extract_email", _ok_extract)
     await indexer.run_index(do_extract=True)
@@ -264,7 +264,7 @@ async def test_no_model_check_when_nothing_to_extract(fake_embed, monkeypatch):
 async def test_ask_mode_stops_run_and_points_to_the_app(fake_embed, monkeypatch):
     make_eml("one.eml", days_ago=1)
     pulls = []
-    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    _fake_ollama_models(monkeypatch, [f"{settings.embed_model}:latest"], pulls)
     monkeypatch.setattr(settings, "auto_pull", "ask")
     monkeypatch.setattr(indexer, "extract_email", _ok_extract)
     await indexer.run_index(do_extract=True)
@@ -276,7 +276,7 @@ async def test_ask_mode_stops_run_and_points_to_the_app(fake_embed, monkeypatch)
 async def test_confirmed_pull_list_is_downloaded_first(fake_embed, monkeypatch):
     make_eml("one.eml", days_ago=1)
     pulls = []
-    _fake_ollama_models(monkeypatch, ["nomic-embed-text:latest"], pulls)
+    _fake_ollama_models(monkeypatch, [f"{settings.embed_model}:latest"], pulls)
     monkeypatch.setattr(settings, "auto_pull", "ask")
     monkeypatch.setattr(indexer, "extract_email", _ok_extract)
     await indexer.run_index(do_extract=True, pull=[settings.extraction_model])

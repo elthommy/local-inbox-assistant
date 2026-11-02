@@ -29,15 +29,17 @@ Nothing running.
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
-- Cross-language retrieval: an English question about a French email can
-  miss it ("Was my parcel delivered?" never retrieves "Votre colis a été
-  livré"), with every chat model (2026-11-02 chat benchmark). A multilingual
-  embedding model, or translating the query, would fix it; changing the
-  embedding model means rebuilding the index.
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
+- 2026-11-02 — multilingual retrieval: `scripts.benchmark_retrieval` (demo
+  mailbox + 1 000 real emails as distractors, does the answering email reach
+  the chat's top 6). Default embedding model `nomic-embed-text` →
+  `embeddinggemma`: 9/16 → 15/16 questions, cross-language 5/12 → 11/12.
+  Per-model query/document prefixes (`EMBED_PREFIXES`); the index records its
+  embedding setup and rebuilds itself once when it changes (~3 min for the
+  full mailbox). Branch `feat/multilingual-embeddings`, on top of PR #56.
 - 2026-11-02 — chat model choice: `scripts.benchmark_chat` (21 EN/FR
   questions ×2 on the demo mailbox, facts + answer language + speed). The
   chat prompt now names the question's language (detected in

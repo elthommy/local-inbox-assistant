@@ -13,6 +13,9 @@ Each question checks two things automatically:
   language; "any" skips the check). English questions about French mail
   are the drift test.
 
+`source` names the demo emails that hold the answer (corpus keys), for the
+retrieval benchmark (scripts/benchmark_retrieval.py).
+
 Scores are a screen, not a verdict: the benchmark also writes every answer
 to a report for a human read.
 """
@@ -38,43 +41,43 @@ _NOT_FOUND = [
 
 QUESTIONS: list[dict] = [
     # --- English questions, French mail: the language-drift test
-    {"id": "tax", "lang": "en", "q": "When is the property tax due, and how much is it?",
+    {"id": "tax", "source": ["tax_notice"], "lang": "en", "q": "When is the property tax due, and how much is it?",
      "expect": [["1 284", "1,284", "1284", "1.284"], ["@date:+4"]]},
-    {"id": "ag", "lang": "en", "q": "When is the co-owners' general meeting and what is the big vote about?",
+    {"id": "ag", "source": ["syndic_ag"], "lang": "en", "q": "When is the co-owners' general meeting and what is the big vote about?",
      "expect": [["@date:+6"], ["18:30", "18h30", "6:30", "6.30"], ["facade", "façade", "ravalement"]]},
-    {"id": "creche", "lang": "en", "q": "When is the nursery closed?",
+    {"id": "creche", "source": ["creche"], "lang": "en", "q": "When is the nursery closed?",
      "expect": [["@date:+7"]]},
-    {"id": "dentist", "lang": "en", "q": "When is my dentist appointment?",
+    {"id": "dentist", "source": ["dentist"], "lang": "en", "q": "When is my dentist appointment?",
      "expect": [["@date:+3"], ["14:30", "14h30", "2:30", "2.30"]]},
-    {"id": "dinner", "lang": "en", "q": "What should I bring to Marie's dinner, and what is Julien bringing?",
+    {"id": "dinner", "source": ["dinner"], "lang": "en", "q": "What should I bring to Marie's dinner, and what is Julien bringing?",
      "expect": [["dessert"], ["wine", "vin"]]},
-    {"id": "helene", "lang": "en", "q": "What did Hélène ask me?",
+    {"id": "helene", "source": ["syndic_neighbour"], "lang": "en", "q": "What did Hélène ask me?",
      "expect": [["proxy", "pouvoir", "power of attorney"], ["second quote", "second estimate", "another quote", "second devis", "other quote", "new quote"]]},
-    {"id": "parcel", "lang": "en", "q": "Was my parcel delivered?",
+    {"id": "parcel", "source": ["parcel"], "lang": "en", "q": "Was my parcel delivered?",
      "expect": [["yes", "delivered"], ["letterbox", "letter box", "mailbox", "boite aux lettres", "boîte aux lettres"]]},
     # --- English questions, English mail
     {"id": "today", "lang": "en", "q": "What do I need to do today?",
      "expect": [["16:00", "4 pm", "4pm", "board"], ["sign", "msa"], ["status page", "customer-facing", "summary"]]},
-    {"id": "root_cause", "lang": "en", "q": "What caused the checkout-api incident?",
+    {"id": "root_cause", "source": ["incident_update"], "lang": "en", "q": "What caused the checkout-api incident?",
      "expect": [["connection pool", "pool"], ["50"], ["5"]]},
-    {"id": "board", "lang": "en", "q": "Which figures does Sarah need for the board deck, and by when?",
+    {"id": "board", "source": ["board_numbers"], "lang": "en", "q": "Which figures does Sarah need for the board deck, and by when?",
      "expect": [["infrastructure cost", "infra cost", "infrastructure"], ["uptime"], ["16:00", "4 pm", "4pm", "4:00"]]},
-    {"id": "token", "lang": "en", "q": "Which secret leaked, and what should I do about it?",
+    {"id": "token", "source": ["token_leak"], "lang": "en", "q": "Which secret leaked, and what should I do about it?",
      "expect": [["payment"], ["revoke", "rotate"]]},
-    {"id": "invoice", "lang": "en", "q": "How much is the Cloudnest invoice?",
+    {"id": "invoice", "source": ["invoice"], "lang": "en", "q": "How much is the Cloudnest invoice?",
      "expect": [["23.90", "23,90"]]},
     {"id": "missing_en", "lang": "en", "q": "What did my landlord say about the rent increase?",
      "expect": [_NOT_FOUND]},
     # --- French questions, English mail: the drift test the other way
-    {"id": "postmortem", "lang": "fr", "q": "Quand a lieu le postmortem de l'incident ?",
+    {"id": "postmortem", "source": ["incident_postmortem"], "lang": "fr", "q": "Quand a lieu le postmortem de l'incident ?",
      "expect": [["@date:+2"], ["15:00", "15h", "15 h"]]},
-    {"id": "priya", "lang": "fr", "q": "Qu'est-ce que Priya m'a demandé de faire ?",
+    {"id": "priya", "source": ["incident_update"], "lang": "fr", "q": "Qu'est-ce que Priya m'a demandé de faire ?",
      "expect": [["page de statut", "page d'etat", "status page", "statut", "clients", "client"], ["midi", "12h", "12:00", "noon"]]},
-    {"id": "tunewave", "lang": "fr", "q": "Combien coûte mon abonnement Tunewave et quand est-il renouvelé ?",
+    {"id": "tunewave", "source": ["tunewave"], "lang": "fr", "q": "Combien coûte mon abonnement Tunewave et quand est-il renouvelé ?",
      "expect": [["14,99", "14.99"], ["@date:+9"]]},
-    {"id": "offsite", "lang": "fr", "q": "Que faut-il envoyer à Nadia pour le séminaire, et avant quand ?",
+    {"id": "offsite", "source": ["offsite"], "lang": "fr", "q": "Que faut-il envoyer à Nadia pour le séminaire, et avant quand ?",
      "expect": [["alimentaire", "régime", "regime", "dietary", "allergie"], ["arrivée", "arrivee", "heure", "arrival"], ["@date:+3", "@wd:+3"]]},
-    {"id": "meetup", "lang": "fr", "q": "C'est quand le meetup Python et de quoi parlent les talks ?",
+    {"id": "meetup", "source": ["meetup"], "lang": "fr", "q": "C'est quand le meetup Python et de quoi parlent les talks ?",
      "expect": [["@date:+4"], ["19:00", "19h", "19 h"], ["rag", "gpu", "laptop", "portable"]]},
     {"id": "missing_fr", "lang": "fr", "q": "Est-ce que j'ai reçu ma nouvelle carte Vitale ?",
      "expect": [_NOT_FOUND]},
