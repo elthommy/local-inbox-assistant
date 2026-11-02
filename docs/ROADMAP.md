@@ -18,7 +18,12 @@ Nothing running.
 1. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
    free-text due dates, implausible dates); one task/event per reply thread
    instead of one per message; a shop newsletter's agenda and road-closure
-   notices should not become events.
+   notices should not become events. Plan (2026-11-02): dedup by thread
+   (`In-Reply-To`/`References`) and date normalisation in code, no GPU, and
+   applicable to stored results without re-parsing; only the
+   newsletter/road-closure fix needs a prompt change: benchmark on the 280
+   hand-checked emails (~5 min per variant) + re-parse (~5 min), ~15–25 min
+   of GPU in total. Ask the user before each GPU run.
 2. **"My priorities" side effect.** Appending any rule shifts ~1% of
    unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
    A per-rule pre-filter (match the sender before adding the rule) would
