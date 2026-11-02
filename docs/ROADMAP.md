@@ -33,14 +33,14 @@ Nothing running.
 
 ## Done
 
-- 2026-11-02 — multilingual retrieval: `scripts.benchmark_retrieval` (demo
+- 2026-11-02 — #57 multilingual retrieval: `scripts.benchmark_retrieval` (demo
   mailbox + 1 000 real emails as distractors, does the answering email reach
   the chat's top 6). Default embedding model `nomic-embed-text` →
   `embeddinggemma`: 9/16 → 15/16 questions, cross-language 5/12 → 11/12.
   Per-model query/document prefixes (`EMBED_PREFIXES`); the index records its
   embedding setup and rebuilds itself once when it changes (~3 min for the
-  full mailbox). Branch `feat/multilingual-embeddings`, on top of PR #56.
-- 2026-11-02 — chat model choice: `scripts.benchmark_chat` (21 EN/FR
+  full mailbox).
+- 2026-11-02 — #56 chat model choice: `scripts.benchmark_chat` (21 EN/FR
   questions ×2 on the demo mailbox, facts + answer language + speed). The
   chat prompt now names the question's language (detected in
   `app/lang.py`) at its end; `gemma4:12b` went from 36% to 93% of answers
