@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 import app.api as api_module
 import app.main as main_module
-from app.config import settings
+from app.config import RECOMMENDED_CHAT_MODEL, settings
 from app.llm.errors import UserFacingError
 from app.llm.ollama import OllamaClient
 
@@ -94,6 +94,7 @@ class TestStatus:
             {"name": "qwen3:8b", "size": 5_200_000_000},
             {"name": "gemma4:12b", "size": 8_000_000_000},
         ]
+        assert data["ollama"]["recommended_chat_model"] == RECOMMENDED_CHAT_MODEL
         assert data["ollama"]["auto_pull"] == settings.auto_pull
         assert data["ollama"]["missing_models"] == []
         assert data["claude"] == {"configured": False, "model": settings.claude_model}

@@ -31,6 +31,7 @@ const STATUS = {
     up: true,
     url: 'http://localhost:11434',
     chat_model: 'qwen3:8b',
+    recommended_chat_model: 'qwen3:8b',
     extraction_model: 'qwen3:8b',
     embed_model: 'nomic-embed-text',
     chat_model_pulled: true,
@@ -440,7 +441,7 @@ describe('App', () => {
     await screen.findByText('Sarah Chen')
     const option = screen.getByRole('option', { name: /Claude \(cloud\) — no API key/ })
     expect(option).toBeDisabled()
-    expect(screen.getByRole('option', { name: /qwen3:8b · Ollama \(local\)/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /qwen3:8b ★ recommended · Ollama \(local\)/ })).toBeInTheDocument()
   })
 
   it('enables Claude when a key is configured and selects it', async () => {
@@ -479,6 +480,16 @@ describe('App', () => {
     await userEvent.keyboard('{Enter}')
     expect(await screen.findByText(/Done\./)).toBeInTheDocument()
     expect(document.querySelector('img[src*="attacker.example"]')).toBeNull()
+  })
+
+  it('marks the recommended chat model in both pickers', async () => {
+    render(<App />)
+    await screen.findByText('Sarah Chen')
+    for (const select of screen.getAllByLabelText('chat model')) {
+      const options = [...select.options].map((o) => o.textContent)
+      expect(options.find((t) => t.startsWith('qwen3:8b'))).toContain('★ recommended')
+      expect(options.filter((t) => t.includes('recommended'))).toHaveLength(1)
+    }
   })
 
   it('switches the chat model from the chat pane dropdown', async () => {

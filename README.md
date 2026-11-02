@@ -84,9 +84,9 @@ Diagrams of the indexing pipeline and the chat/RAG flow are in
 ## Requirements
 
 - [Ollama](https://ollama.com) running locally with:
-  - an instruct model for chat and one for email parsing — defaults
-    `qwen3:8b` (chat) and `gemma4:12b` (parsing), switchable in the UI; a
-    missing one is offered for download by the app
+  - an instruct model for chat and email parsing — default `gemma4:12b` for
+    both, switchable separately in the UI; a missing one is offered for
+    download by the app
   - `nomic-embed-text` for embeddings (`ollama pull nomic-embed-text`)
 - [uv](https://docs.astral.sh/uv/) (manages Python 3.12 + deps)
 - Node.js for the frontend
@@ -209,32 +209,59 @@ then answers a few scripted questions. See
 
 ### Changing models
 
-Chat and email parsing (the task/event/priority extraction pass) use two
+Chat and email parsing (the task/event/priority extraction pass) can use two
 separate models, so a lighter model can triage the inbox while a bigger one
-answers questions — or vice versa. Chat defaults to `qwen3:8b`, email parsing
-to `gemma4:12b` (see [why](#why-gemma412b-for-parsing)); both are chosen in the
-UI, from any non-embedding model pulled in Ollama (`ollama pull …`):
+answers questions — or vice versa. Both default to `gemma4:12b` (see why for
+[parsing](#why-gemma412b-for-parsing) and [chat](#why-gemma412b-for-chat)):
+one model stays loaded instead of two swapping in VRAM. Both are chosen in
+the UI, from any non-embedding model pulled in Ollama (`ollama pull …`):
 
 - **settings drawer → Models**: one dropdown for the chat model, one for the
   email parsing model, each option showing the model's size;
 - **chat panel header**: the model dropdown there is the same chat-model
   setting, just closer at hand.
 
+The benchmarked chat pick is marked **★ recommended** in both chat-model
+dropdowns.
+
 Choices persist (SQLite meta table) and survive restarts. A parsing model
 switch only affects newly indexed mail — already-parsed emails keep their
 cached results. To redo the current extraction window with the new model,
 use the drawer's **"re-parse recent emails"** button.
 
-**On a mixed-language mailbox, expect the chat model to drift into the wrong
-language.** With French and English mail in the same index, `qwen3:8b` — the
-default — will sometimes answer an English question in French, because the
-retrieved excerpts it is reasoning over are French. The extraction pass is less
-exposed to this: it runs once per email, so it only ever sees one language at a
-time. Two ways out for chat, in increasing order of cost: state the language in
-the question ("answer in English"), or switch the chat model to a larger one —
-`qwen3.6` holds the requested language reliably here, at a much larger download
-and more VRAM. This is a small-model limitation rather than a bug in the
-retrieval, so it does not affect a single-language mailbox.
+**Answer language on a mixed-language mailbox.** Small models tend to answer
+in the language of the retrieved excerpts rather than the question's. The chat
+prompt therefore detects the question's language (English or French, by
+stop-word counts in `app/lang.py`) and names it in a closing rule ("The user's
+latest message is in English. Write your answer in English…"); other languages
+fall back to "the language of the user's latest message". The "summarize"
+button keeps its own rule: a summary is written in the email's language.
+
+#### Why `gemma4:12b` for chat
+
+`scripts.benchmark_chat` asks 21 English/French questions (twice each) about
+the synthetic demo mailbox through the production chat prompt, and checks the
+expected facts and the answer language automatically (`scripts/chat_eval.py`).
+Results on 2026-11-02 (RTX 4070 Ti, 12 GB), share of the 42 answers passing
+both checks / in the right language:
+
+| model | old prompt | language named in the prompt | answer time |
+|---|---|---|---|
+| `gemma4:12b` | 36% / 40% | **93% / 100%** | 1.2 s |
+| `gemma3:12b-it-qat` | 83% / 98% | 90% / 100% | 5.1 s |
+| `qwen3:8b` | 67% / 76% | 81% / 95% | 1.2 s |
+
+With a generic "reply in the user's language" rule, larger models that do not
+fit in 12 GB (`qwen3.6`, `glm-4.7-flash`, `gpt-oss:20b`) scored 76–88% at
+3–7 s per answer. One question fails for every model: an English question
+about a French email ("Was my parcel delivered?") does not retrieve it — a
+cross-language retrieval limit of the embedding model, not of the chat model.
+
+```bash
+cd backend
+uv run python -m scripts.benchmark_chat --dir data/benchmark/chat-run \
+    --models gemma4:12b qwen3:8b > data/benchmark/chat-run.log 2>&1 &
+```
 
 The embedding model is the exception: it is set via `INBOX_EMBED_MODEL` in
 `backend/.env` (default `nomic-embed-text`), and changing it requires

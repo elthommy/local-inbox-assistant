@@ -70,6 +70,38 @@ async def test_context_with_empty_index(monkeypatch):
     assert "(none)" in msgs[0]["content"]  # tasks and events blocks
 
 
+async def test_language_rule_comes_after_the_excerpts(monkeypatch):
+    async def fake_search(*a, **kw):
+        return [{"email_id": 1, "text": "EXCERPT-FR", "distance": 0.1}]
+
+    monkeypatch.setattr(rag, "search_emails", fake_search)
+    msgs = await chat.build_messages(
+        OllamaClient(), [{"role": "user", "content": "q"}], use_context=True
+    )
+    system = msgs[0]["content"]
+    # recency: the rule is the last thing the model reads before the question
+    assert system.index("## Answer language") > system.index("EXCERPT-FR")
+    assert "mostly French" not in system  # the hint pulled answers into French
+    assert "Exception" not in system  # no email in focus
+
+
+async def test_language_exception_only_with_email_in_focus(monkeypatch):
+    eid = seed_email_with_task_and_event()
+    set_body(eid, "FULL-BODY-TEXT")
+
+    async def fake_search(*a, **kw):
+        return []
+
+    monkeypatch.setattr(rag, "search_emails", fake_search)
+    msgs = await chat.build_messages(
+        OllamaClient(),
+        [{"role": "user", "content": "summarize"}],
+        use_context=True,
+        email_id=eid,
+    )
+    assert "a summary of the email in focus" in msgs[0]["content"]
+
+
 async def test_history_truncated_to_last_12(monkeypatch):
     async def fake_search(*a, **kw):
         return []
@@ -196,3 +228,16 @@ async def test_stream_answer_claude_unconfigured_fails_fast(monkeypatch):
             [{"role": "user", "content": "hi"}], True, provider="claude"
         ):
             pass
+
+
+def test_answer_language_rule_names_the_detected_language():
+    rule = chat.answer_language_rule("When is the property tax due?", False)
+    assert "in English" in rule and "Exception" not in rule
+    assert "in French" in chat.answer_language_rule("Quand est la réunion ?", False)
+
+
+def test_answer_language_rule_falls_back_when_unclear():
+    rule = chat.answer_language_rule("Wann ist das Treffen?", True)
+    assert "the language of the user's latest message" in rule
+    assert rule[0].isupper()  # no dangling space from the empty prefix
+    assert "a summary of the email in focus" in rule
