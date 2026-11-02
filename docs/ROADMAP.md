@@ -15,28 +15,33 @@ Nothing running.
 
 ## Next
 
-1. Spot-check the priority view after the v5 re-parse (done 2026-11-01 with a
-   personal rule set in "My priorities").
+1. **Chat model choice.** The picker already exists (a `<select>` in the chat
+   pane header and in the settings drawer; Claude is offered when
+   configured). What is missing is knowing which model to pick: evaluate the
+   pulled models for chat (`gemma4:12b` was only evaluated for extraction;
+   `qwen3:8b` drifts into the mailbox's language), set the winner as the
+   default, and help the user choose in the picker (e.g. mark the
+   recommended model, show the size).
+2. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
+   free-text due dates, implausible dates); one task/event per reply thread
+   instead of one per message; a shop newsletter's agenda and road-closure
+   notices should not become events.
+3. **"My priorities" side effect.** Appending any rule shifts ~1% of
+   unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
+   A per-rule pre-filter (match the sender before adding the rule) would
+   remove that.
 
 ## Later / ideas
 
-- Evaluate the **chat** model choice (`gemma4:12b` was only evaluated for
-  extraction; `qwen3:8b` drifts into the mailbox's language).
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
-- Left over from the v4.1 spot-check (2026-11-01): event/task dates are not
-  normalised (`06-NOV-2026`, free-text due dates; one implausible
-  shareholder-meeting date); a reply thread yields the same task/event once
-  per message (no dedup across a thread); a shop newsletter's agenda and
-  road-closure notices still become events.
-- "My priorities" side effects: appending any rule shifts ~1% of unrelated
-  emails' priority (benchmark: 2 wrong, 3 right out of 280). A per-rule
-  pre-filter (match sender before adding the rule) would remove that.
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
 
+- 2026-11-01 — priority view spot-checked after the v5 re-parse, with a
+  personal rule set in "My priorities".
 - 2026-11-01 — #55 demo data + launch video: 27-email synthetic corpus with
   seed-time dates, `seed_demo --skip-embed`, `scripts.demo_server` (scripted
   chat, no model), storyboard `docs/demo-scenario.md`, 20 s video in the
