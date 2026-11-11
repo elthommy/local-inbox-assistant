@@ -11,20 +11,42 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-Nothing running.
+**Dates and thread dedup** (branch `feat/dates-thread-dedup`, not yet
+committed). Done, no GPU used:
+- `app/threads.py`: emails grouped by thread (Message-ID / In-Reply-To /
+  References, union-find); `/api/tasks`, `/api/events`, the chat context and
+  the MCP tools list a task/event once per (thread, date), the newest
+  email's copy winning. Read-time only, nothing deleted. Collapsing by date
+  rather than "newest email only" because a later reply can mention a
+  different appointment (someone else's) that must not hide the first.
+- `app/event_dates.py`: `31-JUL-2026` / `21-07-2026` forms; task dues
+  normalized like event dates (ISO; month-only or urgency wordings kept as
+  written; URLs, durations and other non-dates cleared); events and dues
+  already past at the email's send date (or > 2 years ahead) dropped.
+  `python -m app.event_dates` backfills stored rows. The UI shows dues in
+  the chosen date format.
+- Backfill applied to the real DB on 2026-11-02 (backup taken first in
+  `backend/data/`, git-ignored): 10 events fixed or dropped, 37 dues
+  normalized; listed tasks 80 → 69, events 80 → 65.
+
+- Extraction prompt **v6** (2026-11-10): events announced to a mailing list
+  or the public (venue/shop/association agendas, product launches, earnings
+  announcements, crowdfunding openings) and public notices about roads,
+  public works or outages are not events; 2 examples added. Benchmark on
+  the 280 hand-checked emails: invented events 4 → 2, real events found
+  unchanged (18/20), priority accuracy equal or better on every set. Of the
+  83 emails that had a stored event, 42 keep one (all road-closure and
+  crowdfunding mail dropped). All 904 parsed emails re-parsed with v6 on
+  2026-11-10 (DB backup taken first in `backend/data/`, git-ignored):
+  listed tasks 69 → 44, events 65 → 29; 83 emails medium → low, mostly
+  older results now following the v5 rules (forge/forum notifications,
+  bank alerts, account notices). A few changes to spot-check in the UI.
+
+Left: commit and open the PR.
 
 ## Next
 
-1. **Dates and thread dedup.** Normalise event/task dates (`06-NOV-2026`,
-   free-text due dates, implausible dates); one task/event per reply thread
-   instead of one per message; a shop newsletter's agenda and road-closure
-   notices should not become events. Plan (2026-11-02): dedup by thread
-   (`In-Reply-To`/`References`) and date normalisation in code, no GPU, and
-   applicable to stored results without re-parsing; only the
-   newsletter/road-closure fix needs a prompt change: benchmark on the 280
-   hand-checked emails (~5 min per variant) + re-parse (~5 min), ~15–25 min
-   of GPU in total. Ask the user before each GPU run.
-2. **"My priorities" side effect.** Appending any rule shifts ~1% of
+1. **"My priorities" side effect.** Appending any rule shifts ~1% of
    unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
    A per-rule pre-filter (match the sender before adding the rule) would
    remove that.

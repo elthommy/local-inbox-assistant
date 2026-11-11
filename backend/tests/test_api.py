@@ -215,6 +215,33 @@ class TestStatsAndLists:
         assert data[0]["done"] is False
         assert data[0]["email_id"] == eid  # lets the UI dismiss the source email
 
+    def test_thread_repeats_listed_once(self, client):
+        """A reply re-sending the same task and event shows them once, from
+        the newest email; the older copy's done state doesn't leak through."""
+        from app.db import get_conn
+
+        eid = seed(client)
+        with get_conn() as conn:
+            reply = conn.execute(
+                "INSERT INTO emails(maildir_file, message_id, in_reply_to, sender, "
+                "subject, date_utc, extracted) VALUES('r.eml', '<r@x>', '<a@x>', "
+                "'Sarah', 'Re: Q3 report', ?, 1)",
+                (days_ago(0),),
+            ).lastrowid
+            conn.execute("UPDATE tasks SET done = 1 WHERE email_id = ?", (eid,))
+            conn.execute(
+                "INSERT INTO tasks(email_id, text, due) VALUES(?, 'review it', 'Fri')",
+                (reply,),
+            )
+            conn.execute(
+                "INSERT INTO events(email_id, title, date) VALUES(?, 'review', ?)",
+                (reply, EVENT_DATE),
+            )
+        tasks = client.get("/api/tasks").json()
+        assert [(t["email_id"], t["done"]) for t in tasks] == [(reply, False)]
+        events = client.get("/api/events").json()
+        assert [e["email_id"] for e in events] == [reply]
+
     def test_events_include_source(self, client):
         eid = seed(client)
         data = client.get("/api/events").json()

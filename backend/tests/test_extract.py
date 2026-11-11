@@ -15,6 +15,8 @@ from app.extract import (
     system_prompt,
 )
 
+JUL_9 = "2026-07-09T10:00:00+00:00"
+
 
 def insert_email(conn, *, file="a.eml", days_ago=1, extracted=0, sender_email=""):
     dt = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
@@ -64,6 +66,7 @@ class TestStoreExtraction:
     def test_stores_priority_tasks_events(self):
         with get_conn() as conn:
             eid = insert_email(conn)
+            conn.execute("UPDATE emails SET date_utc = ? WHERE id = ?", (JUL_9, eid))
             store_extraction(
                 conn,
                 eid,
@@ -82,7 +85,7 @@ class TestStoreExtraction:
             task = conn.execute("SELECT * FROM tasks").fetchone()
             assert (task["text"], task["due"], task["done"]) == (
                 "pay invoice",
-                "Jul 20",
+                "2026-07-20",  # normalized against the send date
                 0,
             )
             event = conn.execute("SELECT * FROM events").fetchone()
@@ -91,6 +94,27 @@ class TestStoreExtraction:
                 "2026-07-14",
                 "14:00",
             )
+
+    def test_dates_already_past_at_send_time_are_dropped(self):
+        with get_conn() as conn:
+            eid = insert_email(conn)
+            conn.execute("UPDATE emails SET date_utc = ? WHERE id = ?", (JUL_9, eid))
+            store_extraction(
+                conn,
+                eid,
+                {
+                    "priority": "low",
+                    "tasks": [{"text": "renew", "due": "2025-11-05"}],
+                    "events": [
+                        {"title": "old visit", "date": "5 novembre 2025"},
+                        {"title": "next visit", "date": "15/07/2026"},
+                    ],
+                },
+            )
+            task = conn.execute("SELECT text, due FROM tasks").fetchone()
+            assert (task["text"], task["due"]) == ("renew", "")  # task kept
+            events = conn.execute("SELECT title, date FROM events").fetchall()
+            assert [tuple(e) for e in events] == [("next visit", "2026-07-15")]
 
     def test_invalid_priority_coerced_to_low(self):
         with get_conn() as conn:

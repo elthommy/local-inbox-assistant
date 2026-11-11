@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from app import rag
 from app.db import get_conn, init_db, triage_filter
 from app.llm.ollama import OllamaClient
+from app.threads import collapse_rows
 
 mcp = FastMCP("localmail")
 
@@ -76,16 +77,21 @@ def get_thread(message_id: str) -> list[dict]:
 @mcp.tool()
 def list_tasks(include_done: bool = False) -> list[dict]:
     """List action items extracted from recent emails."""
-    done = "" if include_done else "AND t.done = 0"
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT t.id, t.text, t.due, t.done, e.sender AS source, "
+            f"SELECT t.id, t.email_id, t.text, t.due, t.done, e.sender AS source, "
             f"e.subject, e.date_utc FROM tasks t "
             f"JOIN emails e ON e.id = t.email_id "
-            f"WHERE {triage_filter()} {done} "
+            f"WHERE {triage_filter()} "
             f"ORDER BY e.date_utc DESC"
         ).fetchall()
-    return [{**dict(r), "done": bool(r["done"])} for r in rows]
+        # collapse thread repeats before the done filter (see app.threads)
+        rows = collapse_rows(conn, rows, "due")
+    return [
+        {**dict(r), "done": bool(r["done"])}
+        for r in rows
+        if include_done or not r["done"]
+    ]
 
 
 @mcp.tool()
@@ -93,14 +99,14 @@ def list_events(limit: int = 20) -> list[dict]:
     """List appointments/deadlines extracted from recent emails."""
     with get_conn() as conn:
         rows = conn.execute(
-            f"SELECT ev.id, ev.title, ev.date, ev.time, e.sender AS source, "
-            f"e.subject, e.date_utc FROM events ev "
+            f"SELECT ev.id, ev.email_id, ev.title, ev.date, ev.time, "
+            f"e.sender AS source, e.subject, e.date_utc FROM events ev "
             f"JOIN emails e ON e.id = ev.email_id "
             f"WHERE {triage_filter()} "
-            f"ORDER BY e.date_utc DESC LIMIT ?",
-            (limit,),
+            f"ORDER BY e.date_utc DESC"
         ).fetchall()
-    return [dict(r) for r in rows]
+        rows = collapse_rows(conn, rows, "date")
+    return [dict(r) for r in rows[:limit]]
 
 
 if __name__ == "__main__":
