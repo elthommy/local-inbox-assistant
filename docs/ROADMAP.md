@@ -11,7 +11,7 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-**"My priorities" sender pre-filter** (branch `feat/priorities-prefilter`).
+**"My priorities" sender pre-filter** (branch `feat/priorities-prefilter`, PR #62, in review).
 Appending every rule to every parsing prompt shifted ~1% of unrelated
 emails' priority (benchmark: 2 wrong, 3 right out of 280). Now
 `app/my_priorities.py` splits the text into rules (one per line) and adds a
@@ -26,7 +26,7 @@ included); a first word-based version reached 186 (quoted subject words like
 "action", "votre" matched banks and utilities). UI hint and README say "one
 rule per line, naming the sender".
 
-Left: open the PR. Optional, needs the GPU (~20 min): re-parse the stored
+Left: review and merge #62. Optional, needs the GPU (~20 min): re-parse the stored
 emails so results parsed with all rules on 2026-11-10 lose the side effect.
 
 ## Next
