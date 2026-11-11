@@ -895,14 +895,14 @@ function MyPriorities({ tunables, busy, ollamaUp, onSave, onReextract }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontFamily: MONO, fontSize: 10, color: '#6b7280' }}>
-        your own triage rules, in plain words — they only change the priority of parsed emails, and stay on this machine
+        your own triage rules, in plain words, one per line naming the sender — each applies only to emails from that sender, only changes their priority, and stays on this machine
       </div>
       <textarea
         value={draft}
         aria-label="my priorities"
         maxLength={MY_PRIORITIES_MAX}
         rows={4}
-        placeholder="e.g. votes on my crowdfunding investments are high priority; their promotions stay low"
+        placeholder="e.g. votes on my Acme Crowdfunding investments are high priority; their promotions stay low"
         onChange={(e) => {
           setDraft(e.target.value)
           setJustSaved(false)

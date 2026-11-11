@@ -309,10 +309,14 @@ with the same `ollama pull` hint.
 ### My priorities (personal triage rules)
 
 The default priority rules are generic. **Settings drawer → My priorities**
-takes your own rules in plain words, e.g. "votes on my crowdfunding
-investments are high priority; their promotions stay low". They are appended
-to the parsing prompt and may change only an email's priority, never its
-tasks or events. The text is stored in the local SQLite meta table (never in
+takes your own rules in plain words, one per line, each naming the sender,
+e.g. "votes on my Acme Crowdfunding investments are high priority; their
+promotions stay low". A rule is appended to the parsing prompt only for
+emails from the sender it names (a word of the sender's display name, of the
+organisation domain like `acmecrowdfunding.com`, or of the address at a
+personal provider like Gmail), so emails no rule names are parsed exactly as
+without rules. A rule may change only an email's priority, never its tasks
+or events. The text is stored in the local SQLite meta table (never in
 the code or the repo, never sent anywhere but the local Ollama model). Like a
 model switch, it applies to newly parsed mail; after saving, the section
 offers **"re-parse recent emails"** to apply it to the extraction window.

@@ -11,45 +11,27 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-**Dates and thread dedup** (branch `feat/dates-thread-dedup`, PR #61,
-in review). Done, no GPU used:
-- `app/threads.py`: emails grouped by thread (Message-ID / In-Reply-To /
-  References, union-find); `/api/tasks`, `/api/events`, the chat context and
-  the MCP tools list a task/event once per (thread, date), the newest
-  email's copy winning. Read-time only, nothing deleted. Collapsing by date
-  rather than "newest email only" because a later reply can mention a
-  different appointment (someone else's) that must not hide the first.
-- `app/event_dates.py`: `31-JUL-2026` / `21-07-2026` forms; task dues
-  normalized like event dates (ISO; month-only or urgency wordings kept as
-  written; URLs, durations and other non-dates cleared); events and dues
-  already past at the email's send date (or > 2 years ahead) dropped.
-  `python -m app.event_dates` backfills stored rows. The UI shows dues in
-  the chosen date format.
-- Backfill applied to the real DB on 2026-11-02 (backup taken first in
-  `backend/data/`, git-ignored): 10 events fixed or dropped, 37 dues
-  normalized; listed tasks 80 → 69, events 80 → 65.
+**"My priorities" sender pre-filter** (branch `feat/priorities-prefilter`).
+Appending every rule to every parsing prompt shifted ~1% of unrelated
+emails' priority (benchmark: 2 wrong, 3 right out of 280). Now
+`app/my_priorities.py` splits the text into rules (one per line) and adds a
+rule to an email's prompt only when it names the sender: a word of the
+display name, of the organisation domain (`caz.bank.fr` → `bank`), or of the
+address local part at a personal provider (Gmail, Outlook…). Generic words
+("notifications", "club", "statements", "votre"…) never select a rule.
+Emails no rule names get exactly the default prompt, so their result cannot
+move; no GPU benchmark needed for them. On the real mailbox the live rule now
+reaches only its own organisation's 69 emails (all 4 known vote emails
+included); a first word-based version reached 186 (quoted subject words like
+"action", "votre" matched banks and utilities). UI hint and README say "one
+rule per line, naming the sender".
 
-- Extraction prompt **v6** (2026-11-10): events announced to a mailing list
-  or the public (venue/shop/association agendas, product launches, earnings
-  announcements, crowdfunding openings) and public notices about roads,
-  public works or outages are not events; 2 examples added. Benchmark on
-  the 280 hand-checked emails: invented events 4 → 2, real events found
-  unchanged (18/20), priority accuracy equal or better on every set. Of the
-  83 emails that had a stored event, 42 keep one (all road-closure and
-  crowdfunding mail dropped). All 904 parsed emails re-parsed with v6 on
-  2026-11-10 (DB backup taken first in `backend/data/`, git-ignored):
-  listed tasks 69 → 44, events 65 → 29; 83 emails medium → low, mostly
-  older results now following the v5 rules (forge/forum notifications,
-  bank alerts, account notices). A few changes to spot-check in the UI.
-
-Left: review and merge #61 (spot-check a few changed tasks/events in the UI).
+Left: open the PR. Optional, needs the GPU (~20 min): re-parse the stored
+emails so results parsed with all rules on 2026-11-10 lose the side effect.
 
 ## Next
 
-1. **"My priorities" side effect.** Appending any rule shifts ~1% of
-   unrelated emails' priority (benchmark: 2 wrong, 3 right out of 280).
-   A per-rule pre-filter (match the sender before adding the rule) would
-   remove that.
+Nothing queued; pick from "Later / ideas".
 
 ## Later / ideas
 
@@ -59,6 +41,14 @@ Left: review and merge #61 (spot-check a few changed tasks/events in the UI).
 - mbox support — deferred until requested (see README "Limitation").
 
 ## Done
+
+- 2026-11-11 — #61 dates and thread dedup + extraction prompt **v6**: tasks
+  and events listed once per (thread, date) (`app/threads.py`, read-time
+  only); task dues normalized like event dates, past or far-future dates
+  dropped, backfill command `python -m app.event_dates`; v6 drops public /
+  mailing-list announcements and public notices from events (invented events
+  4 → 2 on 280 hand-checked emails). Real DB: listed tasks 80 → 44, events
+  80 → 29.
 
 - 2026-11-02 — #57 multilingual retrieval: `scripts.benchmark_retrieval` (demo
   mailbox + 1 000 real emails as distractors, does the answering email reach
