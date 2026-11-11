@@ -14,6 +14,7 @@ from .config import settings
 from .db import triage_filter
 from .event_dates import normalize_due, normalize_event_date
 from .llm.ollama import OllamaClient
+from .my_priorities import rules_for_sender
 
 log = logging.getLogger(__name__)
 
@@ -163,9 +164,13 @@ async def extract_email(
 ) -> dict:
     """Ask the LLM for priority/tasks/events of one email, as schema-bound JSON."""
     own = owner is not None and owner.sent(row)
+    # Only the rules naming this sender: unrelated emails get the default prompt.
+    rules = rules_for_sender(
+        settings.my_priorities[:MY_PRIORITIES_MAX], row["sender"], row["sender_email"]
+    )
     return await ollama.chat_json(
         [
-            {"role": "system", "content": system_prompt(settings.my_priorities)},
+            {"role": "system", "content": system_prompt(rules)},
             {"role": "user", "content": build_user_msg(row, own)},
         ],
         schema=EXTRACTION_SCHEMA,

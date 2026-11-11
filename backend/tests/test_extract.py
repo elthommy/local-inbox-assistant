@@ -277,8 +277,10 @@ class TestMyPriorities:
         assert prompt.endswith("\n" + "x" * 2000)
         assert "x" * 2001 not in prompt
 
-    async def test_extract_email_uses_saved_rules(self, monkeypatch):
-        monkeypatch.setattr(settings, "my_priorities", "Club votes are high.")
+    async def test_extract_email_adds_only_rules_naming_the_sender(self, monkeypatch):
+        monkeypatch.setattr(
+            settings, "my_priorities", "Club votes are high.\nAlex's mail is high."
+        )
         seen = []
 
         class FakeOllama:
@@ -287,6 +289,10 @@ class TestMyPriorities:
                 return {"priority": "low", "tasks": [], "events": []}
 
         with get_conn() as conn:
-            row = add_mail(conn, "a.eml", "Alex", "alex@example.com")
-        await extract_email(FakeOllama(), row)
-        assert seen[0].endswith("Club votes are high.")
+            alex = add_mail(conn, "a.eml", "Alex", "alex@example.com")
+            bob = add_mail(conn, "b.eml", "Bob", "bob@example.com")
+        await extract_email(FakeOllama(), alex)
+        await extract_email(FakeOllama(), bob)
+        assert seen[0].endswith("\nAlex's mail is high.")
+        assert "Club votes" not in seen[0]
+        assert seen[1] == SYSTEM_PROMPT  # no rule names Bob: default prompt
