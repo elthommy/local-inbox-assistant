@@ -19,6 +19,7 @@ from .llm.claude import ClaudeClient
 from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient, model_pulled
 from .mail.render import render_email
+from .threads import collapse_rows
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -213,7 +214,8 @@ def get_email_body(email_id: int, force_markdown: bool = False):
 
 @router.get("/tasks")
 def list_tasks():
-    """All extracted tasks passing the triage filter, open ones first."""
+    """All extracted tasks passing the triage filter, open ones first; a task
+    repeated across a reply thread is listed once (see app.threads)."""
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT t.id, t.email_id, t.text, t.due, t.done, "
@@ -222,6 +224,7 @@ def list_tasks():
             f"WHERE {triage_filter()} "
             f"ORDER BY t.done ASC, e.date_utc DESC"
         ).fetchall()
+        rows = collapse_rows(conn, rows, "due")
     return [{**dict(r), "done": bool(r["done"])} for r in rows]
 
 
@@ -238,7 +241,8 @@ def toggle_task(task_id: int):
 
 @router.get("/events")
 def list_events():
-    """All extracted events passing the triage filter, newest email first."""
+    """All extracted events passing the triage filter, newest email first;
+    an event repeated across a reply thread is listed once."""
     with get_conn() as conn:
         rows = conn.execute(
             f"SELECT ev.id, ev.email_id, ev.title, ev.date, ev.time, "
@@ -247,6 +251,7 @@ def list_events():
             f"WHERE {triage_filter()} "
             f"ORDER BY e.date_utc DESC"
         ).fetchall()
+        rows = collapse_rows(conn, rows, "date")
     return [dict(r) for r in rows]
 
 

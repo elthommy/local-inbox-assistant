@@ -456,7 +456,7 @@ function EmailRow({ email, body, expanded, onToggle, onDismiss, onMute, onGoTo, 
             {(email.tasks || []).map((t) => (
               <span key={`t${t.id}`} style={{ fontFamily: MONO, fontSize: 10, background: '#2a2013', color: '#FBBF24', padding: '3px 8px', borderRadius: 4 }}>
                 {t.done ? '☑' : '☐'} {t.text}
-                {t.due ? ` · ${t.due}` : ''}
+                {t.due ? ` · ${eventChipDate(t.due, email.date_utc, dateFormat)}` : ''}
               </span>
             ))}
             {(email.events || []).map((ev) => (
@@ -575,7 +575,7 @@ function DismissSourceButton({ onDismiss }) {
   )
 }
 
-function TaskRow({ task, onToggle, onDismiss, onGoTo }) {
+function TaskRow({ task, onToggle, onDismiss, onGoTo, dateFormat }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#12151a', border: '1px solid #232830', borderRadius: 8, padding: '12px 14px' }}>
       <div
@@ -601,7 +601,7 @@ function TaskRow({ task, onToggle, onDismiss, onGoTo }) {
         <div style={{ fontSize: 13, color: task.done ? '#5b6270' : '#e2e5ea', textDecoration: task.done ? 'line-through' : 'none' }}>{task.text}</div>
         <div style={{ fontFamily: MONO, fontSize: 10.5, color: '#6b7280', marginTop: 2 }}>
           from {task.source}
-          {task.due ? ` · due ${task.due}` : ''}
+          {task.due ? ` · due ${eventChipDate(task.due, task.date_utc, dateFormat)}` : ''}
         </div>
       </div>
       <GoToEmailButton onGoTo={onGoTo} />
@@ -1683,6 +1683,7 @@ export default function App() {
                   onToggle={() => toggleTask(t.id)}
                   onDismiss={() => dismissEmail(t.email_id)}
                   onGoTo={() => goToEmail(t.email_id)}
+                  dateFormat={dateFormat}
                 />
               ))}
             {filter === 'tasks' && tasks.length === 0 && (

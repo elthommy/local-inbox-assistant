@@ -13,6 +13,7 @@ from .lang import LANGUAGE_NAMES, detect_language
 from .llm.claude import NOT_CONFIGURED_MESSAGE, ClaudeClient
 from .llm.errors import UserFacingError
 from .llm.ollama import OllamaClient
+from .threads import collapse_rows
 
 SYSTEM_NO_CONTEXT = """\
 You are a helpful assistant inside a local inbox dashboard. Inbox context is
@@ -93,18 +94,20 @@ FOCUS_BODY_MAX_CHARS = 8000
 def _format_context_blocks() -> tuple[str, str]:
     """Render open tasks and events as prompt bullet lists (tasks, events)."""
     with get_conn() as conn:
+        # collapse thread repeats before dropping done tasks, so an old open
+        # copy doesn't resurface once its newest copy is done
         tasks = conn.execute(
-            f"SELECT t.text, t.due, e.sender FROM tasks t "
-            f"JOIN emails e ON e.id = t.email_id "
-            f"WHERE t.done = 0 AND {triage_filter()} "
-            f"ORDER BY e.date_utc DESC LIMIT 20"
+            f"SELECT t.text, t.due, t.done, t.email_id, e.date_utc, e.sender "
+            f"FROM tasks t JOIN emails e ON e.id = t.email_id "
+            f"WHERE {triage_filter()} ORDER BY e.date_utc DESC"
         ).fetchall()
+        tasks = [t for t in collapse_rows(conn, tasks, "due") if not t["done"]][:20]
         events = conn.execute(
-            f"SELECT ev.title, ev.date, ev.time, e.sender FROM events ev "
-            f"JOIN emails e ON e.id = ev.email_id "
-            f"WHERE {triage_filter()} "
-            f"ORDER BY e.date_utc DESC LIMIT 20"
+            f"SELECT ev.title, ev.date, ev.time, ev.email_id, e.date_utc, e.sender "
+            f"FROM events ev JOIN emails e ON e.id = ev.email_id "
+            f"WHERE {triage_filter()} ORDER BY e.date_utc DESC"
         ).fetchall()
+        events = collapse_rows(conn, events, "date")[:20]
     task_lines = [
         f"- {t['text']}"
         + (f" (due {t['due']})" if t["due"] else "")

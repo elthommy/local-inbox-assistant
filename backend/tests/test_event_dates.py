@@ -2,10 +2,19 @@
 
 Test inputs are real values produced by the extraction LLM on live mail."""
 
+from datetime import date, timedelta
+
 import pytest
 
 from app.db import get_conn
-from app.event_dates import backfill_event_dates, resolve_event_date
+from app.event_dates import (
+    backfill_event_dates,
+    backfill_task_dues,
+    normalize_due,
+    normalize_event_date,
+    plausible_date,
+    resolve_event_date,
+)
 
 from .test_extract import insert_email
 
@@ -31,6 +40,9 @@ class TestExplicitDates:
             ("13 juillet 2026 0:00", "2026-07-13"),
             ("Saturday 11th July", "2026-07-11"),
             ("July 16, 2026", "2026-07-16"),
+            ("31-JUL-2026", "2026-07-31"),  # booking-system style
+            ("21-07-2026", "2026-07-21"),
+            ("Sep 1, 2026 at 2:58 pm (CEST)", "2026-09-01"),
         ],
     )
     def test_formats(self, raw, expected):
@@ -89,7 +101,7 @@ class TestUnresolvable:
 
 
 class TestBackfill:
-    def test_rewrites_relative_dates_in_place(self):
+    def test_rewrites_relative_dates_and_drops_past_events(self):
         with get_conn() as conn:
             eid = insert_email(conn)
             row = conn.execute(
@@ -100,19 +112,25 @@ class TestBackfill:
                 "INSERT INTO events(email_id, title, date) VALUES(?, 'a', 'aujourd''hui')",
                 (eid,),
             )
+            later = date.fromisoformat(email_day) + timedelta(days=3)
             conn.execute(
-                "INSERT INTO events(email_id, title, date) VALUES(?, 'b', '2026-01-01')",
+                "INSERT INTO events(email_id, title, date) VALUES(?, 'b', ?)",
+                (eid, later.isoformat()),
+            )
+            conn.execute(
+                "INSERT INTO events(email_id, title, date) VALUES(?, 'old', '2025-11-05')",
                 (eid,),
             )
             conn.execute(
                 "INSERT INTO events(email_id, title, date) VALUES(?, 'c', 'prochainement')",
                 (eid,),
             )
-        assert backfill_event_dates() == 1
+        assert backfill_event_dates() == 2
         with get_conn() as conn:
             dates = dict(conn.execute("SELECT title, date FROM events").fetchall())
         assert dates["a"] == email_day  # resolved
-        assert dates["b"] == "2026-01-01"  # already ISO, untouched
+        assert dates["b"] == later.isoformat()  # already ISO, untouched
+        assert "old" not in dates  # already past when the email was sent
         assert dates["c"] == "prochainement"  # unresolvable, untouched
 
     def test_is_idempotent(self):
@@ -124,3 +142,55 @@ class TestBackfill:
             )
         assert backfill_event_dates() == 1
         assert backfill_event_dates() == 0
+
+
+class TestPlausibility:
+    def test_window_around_the_send_date(self):
+        assert plausible_date("2026-07-08", EMAIL)  # 1 day margin (time zones)
+        assert not plausible_date("2026-07-07", EMAIL)
+        assert plausible_date("2028-07-01", EMAIL)
+        assert not plausible_date("2029-01-01", EMAIL)
+
+    def test_event_dates(self):
+        assert normalize_event_date("samedi", EMAIL) == "2026-07-11"
+        assert normalize_event_date(" cet été ", EMAIL) == "cet été"  # as written
+        assert normalize_event_date("5 novembre 2025", EMAIL) is None  # drop
+
+
+class TestNormalizeDue:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("Jeu. 23 juil. 19h30", "2026-07-23"),
+            ("July 30, 2026", "2026-07-30"),
+            ("04.08.2026", "2026-08-04"),
+            ("vendredi", "2026-07-10"),
+            ("2026-07-09T20:11:21+00:00", "2026-07-09"),
+            ("octobre", "octobre"),  # month only: kept as written
+            ("end of August", "end of August"),
+            ("dès que possible", "dès que possible"),
+            ("10 minutes", ""),
+            ("https://example.com/tickets", ""),
+            ("PR #95", ""),
+            ("you may pay later", ""),  # "may" the verb, not the month
+            ("1er juillet", ""),  # already past at send time
+            ("", ""),
+        ],
+    )
+    def test_values(self, raw, expected):
+        assert normalize_due(raw, EMAIL) == expected
+
+    def test_backfill(self):
+        with get_conn() as conn:
+            eid = insert_email(conn)
+            for text, due in [("a", "demain"), ("b", "10 minutes"), ("c", "")]:
+                conn.execute(
+                    "INSERT INTO tasks(email_id, text, due) VALUES(?, ?, ?)",
+                    (eid, text, due),
+                )
+        assert backfill_task_dues() == 2
+        assert backfill_task_dues() == 0
+        with get_conn() as conn:
+            dues = dict(conn.execute("SELECT text, due FROM tasks").fetchall())
+        assert dues["a"] != "demain" and len(dues["a"]) == 10
+        assert dues["b"] == dues["c"] == ""

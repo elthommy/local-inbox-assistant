@@ -64,6 +64,8 @@ const EVENT_DATE = (() => {
 const pad2 = (n) => String(n).padStart(2, '0')
 const EVENT_DATE_ISO = `${EVENT_DATE.getFullYear()}-${pad2(EVENT_DATE.getMonth() + 1)}-${pad2(EVENT_DATE.getDate())}`
 const EVENT_DATE_DMY = `${pad2(EVENT_DATE.getDate())}/${pad2(EVENT_DATE.getMonth() + 1)}/${EVENT_DATE.getFullYear()}`
+// default "system" format: the browser locale renders the ISO due
+const DUE_SHOWN = new Date('2026-07-17T00:00:00').toLocaleDateString()
 
 const EMAILS = [
   {
@@ -77,13 +79,13 @@ const EMAILS = [
     dismissed: false,
     muted: false,
     snippet: 'please take one more pass before Friday',
-    tasks: [{ id: 11, text: 'Review Q3 report', due: 'Friday', done: false }],
+    tasks: [{ id: 11, text: 'Review Q3 report', due: '2026-07-17', done: false }],
     events: [{ id: 21, title: 'Review meeting', date: EVENT_DATE_ISO, time: '10:00' }],
   },
 ]
 
 const TASKS = [
-  { id: 11, email_id: 1, text: 'Review Q3 report', due: 'Friday', done: false, source: 'Sarah Chen', date_utc: '2026-07-10' },
+  { id: 11, email_id: 1, text: 'Review Q3 report', due: '2026-07-17', done: false, source: 'Sarah Chen', date_utc: '2026-07-10' },
 ]
 
 const EVENTS = [
@@ -140,7 +142,8 @@ describe('App', () => {
     await userEvent.click(sender)
     expect(screen.getByText(/one more pass/)).toBeInTheDocument()
     expect(screen.getByText('corp.com')).toBeInTheDocument()
-    expect(screen.getByText(/☐ Review Q3 report · Friday/)).toBeInTheDocument()
+    // dues are stored as ISO dates and shown in the user's date format
+    expect(screen.getByText(new RegExp(`☐ Review Q3 report · ${DUE_SHOWN}`))).toBeInTheDocument()
     // event chip date rendered in the system locale by default
     const chipDate = EVENT_DATE.toLocaleDateString()
     expect(screen.getByText(`◷ Review meeting · ${chipDate} 10:00`)).toBeInTheDocument()
@@ -310,7 +313,7 @@ describe('App', () => {
     render(<App />)
     await userEvent.click(await screen.findByText('tasks (1)'))
     expect(await screen.findByText('Review Q3 report')).toBeInTheDocument()
-    expect(screen.getByText(/from Sarah Chen · due Friday/)).toBeInTheDocument()
+    expect(screen.getByText(`from Sarah Chen · due ${DUE_SHOWN}`)).toBeInTheDocument()
     // the checkbox is the only 18px square div
     const row = screen.getByText('Review Q3 report').closest('div').parentElement
     const checkbox = within(row.parentElement).getAllByText('', { selector: 'div' })

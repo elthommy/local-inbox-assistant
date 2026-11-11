@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 
 from .config import settings
 from .db import triage_filter
-from .event_dates import resolve_event_date
+from .event_dates import normalize_due, normalize_event_date
 from .llm.ollama import OllamaClient
 
 log = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ priority:
 
 tasks: only actions the email asks the RECIPIENT to do that matter if not done (book an appointment, pay, reply, activate a new account, claim/keep/renew something before a deadline, pick up an order, update a vulnerable dependency, bring documents). Short imperative phrasing, in the email's language; "due" = deadline as written, or "". NEVER a marketing call to action (buy, invest, sign, subscribe, download the app, read more, take the survey), never "enter/use this code", never for pure notifications. Suggestions ("you can...", "if you wish...", "feel free to...") and practical instructions (arrive 15 minutes early, set your password) are not tasks: only what the recipient is required or explicitly asked to do.
 
-events: only appointments, bookings, meetings the recipient is invited to (also when mentioned inside a reply thread), order pickup slots (Drive, click & collect, a parcel waiting at a relay point or locker until a date), delivery appointments the recipient must be home for (a booked time slot), trips, and account deadlines (claim/keep/activate before a date) that concern the recipient personally, with "date" as written and "time" as written or "". An event needs a concrete date (not "within 4-6 days", not a meeting only proposed) and must be something the recipient booked, ordered, was personally invited to, or must attend. NOT events announced to a mailing list (festivals, webinars, AMAs, conferences, campaign meetings, newsletter agendas), NOT social-network birthday reminders (birthdays and events from the recipient's own calendar notifications ARE events), NOT dates inside receipts, bank statements or bills (debit dates), NOT marketing offer or survey end dates, NOT dates already in the past at the email's date, NOT plain expected delivery dates ("livraison prévue le…", "arrive mercredi", "shipped, arriving…": the parcel comes on its own, nothing to attend).
+events: only appointments, bookings, meetings the recipient is invited to (also when mentioned inside a reply thread), order pickup slots (Drive, click & collect, a parcel waiting at a relay point or locker until a date), delivery appointments the recipient must be home for (a booked time slot), trips, and account deadlines (claim/keep/activate before a date) that concern the recipient personally, with "date" as written and "time" as written or "". An event needs a concrete date (not "within 4-6 days", not a meeting only proposed) and must be something the recipient booked, ordered, was personally invited to, or must attend. NOT events announced to a mailing list or to the public (festivals, webinars, AMAs, conferences, campaign meetings, product launches, earnings announcements, investment or crowdfunding openings, the programme or agenda of a venue, shop, association or political movement listing upcoming dates — even when it says "invitation", "inscription" or "save the date"), NOT public notices about roads, traffic, public works or service outages (road closures, detours, roadworks, planned network interruptions: they inform, there is nothing for the recipient to attend; only a technician visit booked at the recipient's home is an event), NOT social-network birthday reminders (birthdays and events from the recipient's own calendar notifications ARE events), NOT dates inside receipts, bank statements or bills (debit dates), NOT marketing offer or survey end dates, NOT dates already in the past at the email's date, NOT plain expected delivery dates ("livraison prévue le…", "arrive mercredi", "shipped, arriving…": the parcel comes on its own, nothing to attend).
 
 Examples:
 - "Votre code de vérification est 123456, valable 10 minutes" → {"priority":"low","tasks":[],"events":[]}
@@ -69,6 +69,8 @@ Examples:
 - "Votre commande Drive est prête ! Retrait Mar. 14 mars 18h00 - 18h30. Montant payé 52,10€" → {"priority":"medium","tasks":[{"text":"Retirer la commande au Drive","due":"14 mars 18h00"}],"events":[{"title":"Retrait Drive","date":"14 mars","time":"18h00 - 18h30"}]}
 - "Expédié : « Lampe de bureau… » Livraison prévue : jeudi 5 mars" → {"priority":"low","tasks":[],"events":[]}
 - "Order placed: \\"Desk lamp…\\" Thanks for your order. Arriving March 5" → {"priority":"low","tasks":[],"events":[]}
+- "Fermeture de la RD 12 du 3 au 7 mars de 21h à 6h pour travaux, déviation mise en place" → {"priority":"low","tasks":[],"events":[]}
+- "Ce mois-ci à la librairie : dédicace le 7 mars, club de lecture le 14, tournoi le 21. Inscrivez-vous !" → {"priority":"low","tasks":[],"events":[]}
 - "Un technicien doit intervenir à votre domicile, prenez rendez-vous" → {"priority":"high","tasks":[{"text":"Prendre rendez-vous avec le technicien","due":""}],"events":[]}
 
 The email may be in French or English. Reply with JSON matching the schema, nothing else."""
@@ -181,29 +183,25 @@ def store_extraction(conn: sqlite3.Connection, email_id: int, result: dict) -> N
     )
     conn.execute("DELETE FROM tasks WHERE email_id = ?", (email_id,))
     conn.execute("DELETE FROM events WHERE email_id = ?", (email_id,))
-    for task in result.get("tasks", [])[:5]:
-        text = (task.get("text") or "").strip()
-        if text:
-            conn.execute(
-                "INSERT INTO tasks(email_id, text, due) VALUES(?, ?, ?)",
-                (email_id, text[:200], (task.get("due") or "").strip()[:60]),
-            )
     email_row = conn.execute(
         "SELECT date_utc FROM emails WHERE id = ?", (email_id,)
     ).fetchone()
-    email_date = email_row["date_utc"] if email_row else ""
+    email_date = (email_row["date_utc"] if email_row else "") or ""
+    for task in result.get("tasks", [])[:5]:
+        text = (task.get("text") or "").strip()
+        if text:
+            due = normalize_due((task.get("due") or "")[:60], email_date)
+            conn.execute(
+                "INSERT INTO tasks(email_id, text, due) VALUES(?, ?, ?)",
+                (email_id, text[:200], due),
+            )
     for event in result.get("events", [])[:5]:
         title = (event.get("title") or "").strip()
-        if title:
-            raw_date = (event.get("date") or "").strip()[:60]
+        date = normalize_event_date((event.get("date") or "")[:60], email_date)
+        if title and date is not None:  # None: already past at send time
             conn.execute(
                 "INSERT INTO events(email_id, title, date, time) VALUES(?, ?, ?, ?)",
-                (
-                    email_id,
-                    title[:200],
-                    resolve_event_date(raw_date, email_date or "") or raw_date,
-                    (event.get("time") or "").strip()[:60],
-                ),
+                (email_id, title[:200], date, (event.get("time") or "").strip()[:60]),
             )
 
 
