@@ -11,8 +11,8 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-**Dates and thread dedup** (branch `feat/dates-thread-dedup`, not yet
-committed). Done, no GPU used:
+**Dates and thread dedup** (branch `feat/dates-thread-dedup`, PR #61,
+in review). Done, no GPU used:
 - `app/threads.py`: emails grouped by thread (Message-ID / In-Reply-To /
   References, union-find); `/api/tasks`, `/api/events`, the chat context and
   the MCP tools list a task/event once per (thread, date), the newest
@@ -42,7 +42,7 @@ committed). Done, no GPU used:
   older results now following the v5 rules (forge/forum notifications,
   bank alerts, account notices). A few changes to spot-check in the UI.
 
-Left: commit and open the PR.
+Left: review and merge #61 (spot-check a few changed tasks/events in the UI).
 
 ## Next
 
