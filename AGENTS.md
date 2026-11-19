@@ -31,6 +31,12 @@ finish. Never put personal data from the mailbox in it — the repo is public.
   Anthropic/Ollama themselves. Email excerpts are sent to Claude only when the
   user picks Claude for a chat.
 
+## Dev loop commands here
+
+The Python dev loop runs from `backend/` through uv: `uv run ruff format .`,
+`uv run ruff check --fix .`, `uv run pytest -x <paths>`, then `uv run pytest`
+(config and `testpaths` live in `backend/pyproject.toml`).
+
 ## Long-running GPU jobs (benchmarks, bulk re-extraction)
 
 The GPU is shared with the user's own work: they may need it back at any
@@ -54,9 +60,9 @@ including throwaway scripts in a scratchpad — MUST follow this contract.
 6. **Log progress to a file** (one line per chunk) and run the job in the
    background, so a stop/resume never depends on the launching session.
 
-The first job built this way (2026-10-31 model benchmark) kept its state in a
-single JSON file keyed by job then item id, ran chunks of 10 emails, and
-dropped a model whose first 3 emails averaged over 2× the speed budget.
+Defaults that work: state in a single JSON file keyed by job then item id,
+chunks of 10 emails, and drop a model whose first 3 emails average over 2× the
+speed budget.
 
 **When the user asks to stop / get the GPU back** — the agent does it, the
 user does not create the file:
