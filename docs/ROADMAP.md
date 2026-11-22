@@ -29,6 +29,14 @@ rule per line, naming the sender".
 Left: review and merge #62. Optional, needs the GPU (~20 min): re-parse the stored
 emails so results parsed with all rules on 2026-11-10 lose the side effect.
 
+**Retrieval lookup benchmark** (branch `feat/retrieval-lookup-benchmark`, PR #70, in review).
+`scripts.benchmark_retrieval` gains 10 retrieval-only `LOOKUP_QUESTIONS`
+(reference numbers, names without accents, brand / place keywords) in their
+own report column, `--near-dups N` (N synthetic copies of 4 targets differing
+only by reference number, amount and date) and `--only <config>`.
+
+Left: review and merge.
+
 ## Next
 
 Nothing queued; pick from "Later / ideas".
@@ -39,6 +47,13 @@ Nothing queued; pick from "Later / ideas".
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
 - mbox support — deferred until requested (see README "Limitation").
+- Hybrid keyword + vector retrieval (SQLite FTS5 + rank fusion) — **decided
+  not to do for now (2026-11-22): too complex for the gain.** Vector-only
+  embeddinggemma already ranks every reference-number lookup 1st, even among
+  20 near-identical copies (cosine gap +0.04 to +0.14). FTS5 could only fix 2
+  of 26 benchmark questions: a name in a cross-language question (`priya`,
+  rank 255) and "résolution n°7" (rank 9). Revisit if name lookups across
+  languages become a real complaint; the lookup benchmark is ready to measure it.
 
 ## Done
 
