@@ -29,14 +29,6 @@ rule per line, naming the sender".
 Left: review and merge #62. Optional, needs the GPU (~20 min): re-parse the stored
 emails so results parsed with all rules on 2026-11-10 lose the side effect.
 
-**Retrieval lookup benchmark** (branch `feat/retrieval-lookup-benchmark`, PR #70, in review).
-`scripts.benchmark_retrieval` gains 10 retrieval-only `LOOKUP_QUESTIONS`
-(reference numbers, names without accents, brand / place keywords) in their
-own report column, `--near-dups N` (N synthetic copies of 4 targets differing
-only by reference number, amount and date) and `--only <config>`.
-
-Left: review and merge.
-
 ## Next
 
 Nothing queued; pick from "Later / ideas".
@@ -57,6 +49,11 @@ Nothing queued; pick from "Later / ideas".
 
 ## Done
 
+- 2026-11-22 — #70 retrieval lookup benchmark: `scripts.benchmark_retrieval`
+  gains 10 `LOOKUP_QUESTIONS` (own column), `--near-dups N` and `--only`.
+  embeddinggemma (vector only): chat 15/16, lookup 9/10, reference lookups
+  still 1st among 20 near-identical copies. Hybrid FTS5 shelved (see
+  "Later / ideas").
 - 2026-11-11 — #61 dates and thread dedup + extraction prompt **v6**: tasks
   and events listed once per (thread, date) (`app/threads.py`, read-time
   only); task dues normalized like event dates, past or far-future dates
