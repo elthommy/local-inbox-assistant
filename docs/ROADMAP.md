@@ -29,7 +29,7 @@ rule per line, naming the sender".
 Left: review and merge #62. Optional, needs the GPU (~20 min): re-parse the stored
 emails so results parsed with all rules on 2026-11-10 lose the side effect.
 
-**Retrieval lookup benchmark** (branch `feat/retrieval-lookup-benchmark`, in review).
+**Retrieval lookup benchmark** (branch `feat/retrieval-lookup-benchmark`, PR #70, in review).
 `scripts.benchmark_retrieval` gains 10 retrieval-only `LOOKUP_QUESTIONS`
 (reference numbers, names without accents, brand / place keywords) in their
 own report column, `--near-dups N` (N synthetic copies of 4 targets differing
