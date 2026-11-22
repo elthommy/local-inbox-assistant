@@ -11,23 +11,7 @@ artifacts live under `backend/data/` (git-ignored).
 
 ## In progress
 
-**"My priorities" sender pre-filter** (branch `feat/priorities-prefilter`, PR #62, in review).
-Appending every rule to every parsing prompt shifted ~1% of unrelated
-emails' priority (benchmark: 2 wrong, 3 right out of 280). Now
-`app/my_priorities.py` splits the text into rules (one per line) and adds a
-rule to an email's prompt only when it names the sender: a word of the
-display name, of the organisation domain (`caz.bank.fr` → `bank`), or of the
-address local part at a personal provider (Gmail, Outlook…). Generic words
-("notifications", "club", "statements", "votre"…) never select a rule.
-Emails no rule names get exactly the default prompt, so their result cannot
-move; no GPU benchmark needed for them. On the real mailbox the live rule now
-reaches only its own organisation's 69 emails (all 4 known vote emails
-included); a first word-based version reached 186 (quoted subject words like
-"action", "votre" matched banks and utilities). UI hint and README say "one
-rule per line, naming the sender".
-
-Left: review and merge #62. Optional, needs the GPU (~20 min): re-parse the stored
-emails so results parsed with all rules on 2026-11-10 lose the side effect.
+Nothing in progress.
 
 ## Next
 
@@ -38,6 +22,9 @@ Nothing queued; pick from "Later / ideas".
 - Remaining extraction weaknesses after v4.1 (fresh holdout): a few
   account-change notices still rated medium, a few invented events from
   promotional deadlines; important-mail recall ~3–5 of 5 per 50-email set.
+- Optional, needs the GPU (~20 min): re-parse the stored emails so results
+  parsed with every "My priorities" rule on 2026-11-10 lose the side effect
+  fixed by #62.
 - mbox support — deferred until requested (see README "Limitation").
 - Hybrid keyword + vector retrieval (SQLite FTS5 + rank fusion) — **decided
   not to do for now (2026-11-22): too complex for the gain.** Vector-only
@@ -54,6 +41,12 @@ Nothing queued; pick from "Later / ideas".
   embeddinggemma (vector only): chat 15/16, lookup 9/10, reference lookups
   still 1st among 20 near-identical copies. Hybrid FTS5 shelved (see
   "Later / ideas").
+- 2026-11-11 — #62 "My priorities" sender pre-filter: a rule (one per line)
+  is added to an email's parsing prompt only when it names the sender
+  (display name, organisation domain, or local part at a personal
+  provider); generic words never select a rule, and emails no rule names
+  get exactly the default prompt. On the real mailbox the live rule reaches
+  only its own organisation's emails.
 - 2026-11-11 — #61 dates and thread dedup + extraction prompt **v6**: tasks
   and events listed once per (thread, date) (`app/threads.py`, read-time
   only); task dues normalized like event dates, past or far-future dates
